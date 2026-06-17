@@ -1,0 +1,14 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+
+# environment variables
+*.env
+
+# python cache
+__pycache__/
+*.pyc
+
+# virtual environment
+venv/
+
+
+
