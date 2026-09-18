@@ -2,16 +2,16 @@ import os
 import time
 import json
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 from google.api_core.exceptions import ResourceExhausted
 
 load_dotenv()
 
 api_key = os.getenv("GEMINI_API_KEY")
 
-genai.configure(api_key=api_key)
+client = genai.Client(api_key=api_key)
 
-model = genai.GenerativeModel("gemini-2.5-flash")
+
 
 
 # 🔥 CLEAN FUNCTION
@@ -47,7 +47,10 @@ Return ONLY JSON:
 """
 
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt
+    )
         cleaned = clean_ai_response(response.text)
         return cleaned
 
