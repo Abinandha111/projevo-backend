@@ -3,7 +3,7 @@ import time
 import json
 from dotenv import load_dotenv
 from google import genai
-from google.api_core.exceptions import ResourceExhausted
+
 
 load_dotenv()
 
@@ -54,9 +54,7 @@ Return ONLY JSON:
         cleaned = clean_ai_response(response.text)
         return cleaned
 
-    except ResourceExhausted:
-        print("⚠️ Gemini quota exceeded")
-        return None
+    
 
     except Exception as e:
         print("⚠️ Gemini error:", e)
