@@ -72,15 +72,15 @@ def generate_and_save_tasks(
         return {"error": "Project not found"}
 
     # CACHE CHECK
-    if project.ai_tasks:
-        try:
-            json.loads(project.ai_tasks)
-            return {
-                "message": "From cache",
-                "saved_tasks": project.ai_tasks.split("\n")
-            }
-        except:
-            pass
+    # if project.ai_tasks:
+    #     try:
+    #         json.loads(project.ai_tasks)
+    #         return {
+    #             "message": "From cache",
+    #             "saved_tasks": project.ai_tasks.split("\n")
+    #         }
+    #     except:
+    #         pass
 
     # GEMINI CALL
     ai_tasks = generate_task_breakdown_with_retry(project.title)
@@ -114,7 +114,13 @@ def generate_and_save_tasks(
     # SAVE TASKS
     saved_tasks = []
 
-    for epic in structured_ai.get("epics", []):
+    # SAVE TASKS
+    saved_tasks = []
+
+    for epic_index, epic in enumerate(
+        structured_ai.get("epics", []),
+        start=1
+    ):
 
         epic_name = epic.get("name", "General")
 
@@ -127,17 +133,23 @@ def generate_and_save_tasks(
                 Task.title == clean_task
             ).first()
 
-            if not existing_task:
+            if existing_task:
+
+                existing_task.epic_order = epic_index
+
+            else:
+
                 new_task = Task(
                     title=clean_task,
                     project_id=project.id,
-                    status="pending"
+                    status="pending",
+                    epic_order=epic_index
                 )
 
                 db.add(new_task)
                 saved_tasks.append(clean_task)
 
-    db.commit()
+        db.commit()
 
     return {
         "message": "AI generated + cached successfully",

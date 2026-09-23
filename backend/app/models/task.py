@@ -9,6 +9,8 @@ class Task(Base):
 
     title = Column(String, nullable=False)
 
+    epic_order = Column(Integer, default=0)
+
     status = Column(String, default="pending")
 
     project_id = Column(

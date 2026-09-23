@@ -66,7 +66,10 @@ def get_tasks(
 
     tasks = db.query(Task).filter(
         Task.project_id == project_id
-    ).all()
+    ).order_by(
+        Task.epic_order,
+        Task.id
+        ).all()
 
     return {
         "project_id": project_id,
