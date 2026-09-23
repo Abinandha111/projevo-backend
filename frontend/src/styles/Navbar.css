@@ -1,0 +1,23 @@
+nav{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+
+    padding:20px 50px;
+}
+
+nav h2{
+    font-size:30px;
+}
+
+nav div{
+    display:flex;
+    gap:15px;
+}
+
+nav button{
+    padding:10px 15px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+}
