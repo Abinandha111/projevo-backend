@@ -1,12 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import auth, project, task, dashboard, ai
+from app.routes import auth, project, task, dashboard, ai,members
 from app.database.connection import Base, engine
 
 import app.models.user
 import app.models.project
 import app.models.task
+import app.models.Project_Member
+
 
 # ✅ FIRST create app
 app = FastAPI()
@@ -35,6 +37,7 @@ app.include_router(dashboard.router)
 app.include_router(project.router)
 app.include_router(task.router)
 app.include_router(ai.router)
+app.include_router(members.router)
 
 # home route
 @app.get("/")

@@ -153,5 +153,5 @@ def generate_and_save_tasks(
 
     return {
         "message": "AI generated + cached successfully",
-        "saved_tasks": saved_tasks
+        "saved_tasks": ai_tasks
     }

@@ -17,3 +17,5 @@ class Task(Base):
         Integer,
         ForeignKey("projects.id")
     )
+
+    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)

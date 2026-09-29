@@ -12,4 +12,5 @@ class Project(Base):
 
     ai_tasks = Column(Text, nullable=True)
 
+    invite_code = Column(String, unique=True, nullable=True )
     
