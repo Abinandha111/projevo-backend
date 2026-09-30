@@ -25,7 +25,8 @@ def create_project( project: ProjectCreate,db: Session = Depends(get_db),current
         title=project.title,
         description=project.description,
         user_id = current_user["user_id"],
-        invite_code = invite_code
+        invite_code = invite_code,
+        deadline = project.deadline
     )
 
     db.add(new_project)
@@ -48,7 +49,9 @@ def create_project( project: ProjectCreate,db: Session = Depends(get_db),current
         "title": new_project.title,
         "description": new_project.description,
         "user_id": new_project.user_id,
-        "invite_code": new_project.invite_code
+        "invite_code": new_project.invite_code,
+        "deadline": new_project.deadline
+        
     }
 }
 
