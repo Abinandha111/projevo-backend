@@ -6,6 +6,7 @@ from app.schemas.project import ProjectCreate , ProjectUpdate
 from app.utils.dependencies import get_current_user
 from app.models.Project_Member import ProjectMember
 from app.models.task import Task
+from app.models.Project_Member import ProjectMember
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 import secrets
@@ -61,8 +62,11 @@ def get_projects(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    projects = db.query(Project).filter(
-        Project.user_id == current_user["user_id"]
+    projects = db.query(Project).join(
+        ProjectMember,
+        Project.id == ProjectMember.project_id
+    ).filter(
+        ProjectMember.user_id == current_user["user_id"]
     ).all()
 
     return projects
@@ -100,6 +104,7 @@ def delete_project(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    print("delete route hit:",project_id)
     project = db.query(Project).filter(
         Project.id == project_id,
         Project.user_id == current_user["user_id"]
@@ -119,5 +124,6 @@ def delete_project(
 
     db.delete(project)
     db.commit()
+    print("Deleted Project:",project_id)
 
     return {"message": "Project deleted successfully"}
