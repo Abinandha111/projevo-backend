@@ -1,12 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.connection import SessionLocal
 from app.models.project import Project
-from app.schemas.project import ProjectCreate , ProjectUpdate
+from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.utils.dependencies import get_current_user
 from app.models.Project_Member import ProjectMember
 from app.models.task import Task
-from app.models.Project_Member import ProjectMember
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 import secrets
@@ -62,14 +61,40 @@ def get_projects(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    projects = db.query(Project).join(
-        ProjectMember,
-        Project.id == ProjectMember.project_id
-    ).filter(
+    memberships = db.query(ProjectMember).filter(
         ProjectMember.user_id == current_user["user_id"]
     ).all()
 
-    return projects
+    project_ids = [m.project_id for m in memberships]
+    if not project_ids:
+        return []
+
+    projects = db.query(Project).filter(Project.id.in_(project_ids)).all()
+    role_map = {m.project_id: m.role for m in memberships}
+
+    result = []
+    for project in projects:
+        member_count = db.query(ProjectMember).filter(ProjectMember.project_id == project.id).count()
+        tasks = db.query(Task).filter(Task.project_id == project.id).all()
+        completed_tasks = len([t for t in tasks if t.status == "completed"])
+        total_tasks = len(tasks)
+        progress = round((completed_tasks / total_tasks * 100), 1) if total_tasks > 0 else 0
+
+        result.append({
+            "id": project.id,
+            "title": project.title,
+            "description": project.description,
+            "user_id": project.user_id,
+            "invite_code": project.invite_code,
+            "deadline": project.deadline,
+            "role": role_map.get(project.id, "member"),
+            "member_count": member_count,
+            "total_tasks": total_tasks,
+            "completed_tasks": completed_tasks,
+            "progress": progress
+        })
+
+    return result
 
 @router.put("/{project_id}")
 def update_project(
@@ -104,26 +129,29 @@ def delete_project(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    print("delete route hit:",project_id)
-    project = db.query(Project).filter(
-        Project.id == project_id,
-        Project.user_id == current_user["user_id"]
+    # Only project leader can delete the project
+    leader = db.query(ProjectMember).filter(
+        ProjectMember.project_id == project_id,
+        ProjectMember.user_id == current_user["user_id"],
+        ProjectMember.role == "leader"
     ).first()
 
+    if not leader:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the project leader can delete this project"
+        )
+
+    project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
-        return {"error": "Project not found"}
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found"
+        )
 
-
-    db.query(Task).filter(
-    Task.project_id == project_id
-).delete()
-
-    db.query(ProjectMember).filter(
-    ProjectMember.project_id == project_id
-).delete()
-
+    db.query(Task).filter(Task.project_id == project_id).delete()
+    db.query(ProjectMember).filter(ProjectMember.project_id == project_id).delete()
     db.delete(project)
     db.commit()
-    print("Deleted Project:",project_id)
 
     return {"message": "Project deleted successfully"}
