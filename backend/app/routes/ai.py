@@ -5,6 +5,7 @@ from app.database.connection import SessionLocal
 from app.models.project import Project
 from app.models.task import Task
 from app.models.user import User
+from app.models.Project_Member import ProjectMember
 
 from app.services.gemini_service import generate_task_breakdown_with_retry
 from app.utils.ai_limit import check_ai_limit, increment_ai_usage
@@ -69,7 +70,16 @@ def generate_and_save_tasks(
     project = db.query(Project).filter(Project.id == project_id).first()
 
     if not project:
-        return {"error": "Project not found"}
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    leader = db.query(ProjectMember).filter(
+        ProjectMember.project_id == project_id,
+        ProjectMember.user_id == user["user_id"],
+        ProjectMember.role == "leader"
+    ).first()
+
+    if not leader:
+        raise HTTPException(status_code=403, detail="Only the project leader can generate AI tasks")
 
     # CACHE CHECK
     # if project.ai_tasks:

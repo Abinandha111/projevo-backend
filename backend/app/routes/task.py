@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from pydantic import BaseModel
@@ -129,19 +129,33 @@ def get_tasks(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    project = db.query(Project).filter(
-        Project.id == project_id,
-        Project.user_id == current_user["user_id"]
+    member = db.query(ProjectMember).filter(
+        ProjectMember.project_id == project_id,
+        ProjectMember.user_id == current_user["user_id"]
     ).first()
 
-    if not project:
-        return {"error": "Project not found"}
+    if not member:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not a member of this project"
+        )
 
-    tasks = db.query(Task).filter(
-        Task.project_id == project_id
-    ).order_by(
-        Task.epic_order,
-        Task.id
+    if member.role == "leader":
+
+        tasks = db.query(Task).filter(
+            Task.project_id == project_id
+        ).order_by(
+            Task.epic_order,
+            Task.id
+            ).all()
+    else:
+
+        tasks = db.query(Task).filter(
+            Task.project_id == project_id,
+            Task.assigned_to == current_user["user_id"]
+        ).order_by(
+            Task.epic_order,
+            Task.id
         ).all()
 
     return {
@@ -195,15 +209,16 @@ def delete_task(
     ).first()
 
     if not task:
-        return {"error": "Task not found"}
+        raise HTTPException(status_code=404, detail="Task not found")
 
-    project = db.query(Project).filter(
-        Project.id == task.project_id,
-        Project.user_id == current_user["user_id"]
+    leader = db.query(ProjectMember).filter(
+        ProjectMember.project_id == task.project_id,
+        ProjectMember.user_id == current_user["user_id"],
+        ProjectMember.role == "leader"
     ).first()
 
-    if not project:
-        return {"error": "Unauthorized"}
+    if not leader:
+        raise HTTPException(status_code=403, detail="Only the project leader can delete tasks")
 
     db.delete(task)
     db.commit()

@@ -64,7 +64,19 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     }
 
 @router.get("/profile")
-def profile(user=Depends(get_current_user)):
+def profile(user=Depends(get_current_user), db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.id == user["user_id"]).first()
+    if db_user:
+        return {
+            "message": "Protected route accessed 🔐",
+            "user": {
+                "id": db_user.id,
+                "user_id": db_user.id,
+                "name": db_user.name,
+                "email": db_user.email,
+                "role": db_user.role or "user"
+            }
+        }
     return {
         "message": "Protected route accessed 🔐",
         "user": user

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database.connection import SessionLocal
@@ -44,6 +44,18 @@ def get_project_members(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    # Verify current user is a member of this project
+    is_member = db.query(ProjectMember).filter(
+        ProjectMember.project_id == project_id,
+        ProjectMember.user_id == current_user["user_id"]
+    ).first()
+
+    if not is_member:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not a member of this project"
+        )
+
     members = db.query(
         ProjectMember,
         User
