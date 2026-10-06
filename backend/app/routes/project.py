@@ -6,6 +6,7 @@ from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.utils.dependencies import get_current_user
 from app.models.Project_Member import ProjectMember
 from app.models.task import Task
+from app.services.gemini_service import validate_project_idea
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 import secrets
@@ -20,6 +21,19 @@ def get_db():
 
 @router.post("/")
 def create_project( project: ProjectCreate,db: Session = Depends(get_db),current_user = Depends(get_current_user)):
+    # 1. Validate project idea with AI before database creation
+    validation = validate_project_idea(project.title, project.description)
+    if validation.get("error"):
+        raise HTTPException(
+            status_code=503,
+            detail=validation.get("reason", "Project validation is currently unavailable. Please try again.")
+        )
+    if not validation.get("valid"):
+        raise HTTPException(
+            status_code=400,
+            detail=validation.get("reason", "Project idea appears invalid or meaningless. Please provide a clear project title and description.")
+        )
+
     invite_code = secrets.token_hex(4)
     new_project = Project(
         title=project.title,
