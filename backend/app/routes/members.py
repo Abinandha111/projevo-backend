@@ -5,6 +5,7 @@ from app.database.connection import SessionLocal
 from app.models.Project_Member import ProjectMember
 from app.models.user import User
 from app.models.project import Project
+from app.models.activity import Activity
 from app.utils.dependencies import get_current_user
 
 from pydantic import BaseModel
@@ -102,13 +103,25 @@ def join_project(
             "message": "Already a member"
         }
 
+    user = db.query(User).filter(
+        User.id == current_user["user_id"]
+    ).first()
+
     new_member = ProjectMember(
         project_id=project.id,
         user_id=current_user["user_id"],
         role="member"
     )
 
+    activity = Activity(
+    project_id=project.id,
+    user_id=current_user["user_id"],
+    activity_type="member_joined",
+    message=f"{user.name} joined the project"
+    )   
+
     db.add(new_member)
+    db.add(activity)
     db.commit()
 
     return {
