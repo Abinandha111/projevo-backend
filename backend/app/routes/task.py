@@ -10,6 +10,8 @@ from app.schemas.task import TaskCreate, TaskStatusUpdate
 from app.utils.dependencies import get_current_user
 
 from app.models.Project_Member import ProjectMember
+from app.models.activity import Activity
+from app.models.user import User
 
 router = APIRouter(
     prefix="/tasks",
@@ -82,8 +84,24 @@ def assign_task(
         return {
             "message": "User is not a project member"
         }
+    assigned_user = db.query(User).filter(
+        User.id == data.user_id
+    ).first()
+
+    leader_user = db.query(User).filter(
+        User.id == current_user["user_id"]
+    ).first()
 
     task.assigned_to = data.user_id
+
+    activity = Activity(
+        project_id = task.project_id,
+        user_id = current_user["user_id"],
+        activity_type = "type_assigned",
+        message = f"{leader_user.name} assigned {task.title} to {assigned_user.name}"
+    )
+
+    db.add(activity)
 
     db.commit()
     db.refresh(task)
