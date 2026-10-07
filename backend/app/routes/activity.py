@@ -29,7 +29,7 @@ def get_recent_activities(
         ProjectMember, 
         Activity.project_id == ProjectMember.project_id
     ).filter(
-        ProjectMember.user_id == current_user.id
+        ProjectMember.user_id == current_user["user_id"]
     ).order_by(
         Activity.id.desc()
     ).limit(10).all()
