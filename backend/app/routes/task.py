@@ -97,7 +97,7 @@ def assign_task(
     activity = Activity(
         project_id = task.project_id,
         user_id = current_user["user_id"],
-        activity_type = "type_assigned",
+        activity_type = "task_assigned",
         message = f"{leader_user.name} assigned {task.title} to {assigned_user.name}"
     )
 
