@@ -205,9 +205,23 @@ def update_task_status(
 
     if member.role != "leader" and task.assigned_to != current_user["user_id"]:
         return {"error": "You can only update your assigned task"}
-
+    old_status = task.status
     task.status = task_data.status
+    
 
+    if task_data.status == "completed" and old_status != "completed":
+        user=db.query(User).filter(
+            User.id == current_user["user_id"]
+        ).first()
+
+        activity = Activity(
+            project_id  = task.project_id,
+            user_id = current_user["user_id"],
+            activity_type = "task_completed",
+            message=f'{user.name} completed "{task.title}"' 
+        )
+
+        db.add(activity)
     db.commit()
     db.refresh(task)
 
