@@ -6,6 +6,8 @@ from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.utils.dependencies import get_current_user
 from app.models.Project_Member import ProjectMember
 from app.models.task import Task
+from app.models.activity import Activity
+from app.models.user import User
 from app.services.gemini_service import validate_project_idea
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -54,6 +56,20 @@ def create_project( project: ProjectCreate,db: Session = Depends(get_db),current
     )
 
     db.add(new_member)
+    db.commit()
+
+    user = db.query(User).filter(
+    User.id == current_user["user_id"]
+    ).first()
+
+    activity = Activity(
+    project_id=new_project.id,
+    user_id=current_user["user_id"],
+    activity_type="project_created",
+    message=f'{user.name} created project "{new_project.title}"'
+   )
+
+    db.add(activity)
     db.commit()
 
     return {
