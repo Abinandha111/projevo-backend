@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-
+from datetime import date
 from pydantic import BaseModel
 
 from app.database.connection import SessionLocal
@@ -128,7 +128,8 @@ def create_task(
 
     new_task = Task(
         title=task.title,
-        project_id=task.project_id
+        project_id=task.project_id,
+        due_date = task.due_date
     )
 
     db.add(new_task)
@@ -176,9 +177,33 @@ def get_tasks(
             Task.id
         ).all()
 
+    
+    task_results = []
+
+    for task in tasks:
+        if task.status == "completed":
+            deadline_status = "completed"
+        elif task.due_date is None:
+            deadline_status = "no_deadline"
+        elif task.due_date < date.today():
+            deadline_status = "overdue"
+        else:
+            deadline_status = "upcoming"
+
+        task_results.append({
+            "id": task.id,
+            "title": task.title,
+            "status": task.status,
+            "due_date": task.due_date,
+            "assigned_to": task.assigned_to,
+            "epic_order": task.epic_order,
+            "project_id": task.project_id,
+            "deadline_status": deadline_status
+        })
+        
     return {
         "project_id": project_id,
-        "tasks": tasks
+        "tasks": task_results
     }
 
 @router.put("/{task_id}")

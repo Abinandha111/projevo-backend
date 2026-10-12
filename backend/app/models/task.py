@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, Date
 from app.database.connection import Base
 
 
@@ -19,3 +19,5 @@ class Task(Base):
     )
 
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    due_date = Column(Date, nullable=True)
