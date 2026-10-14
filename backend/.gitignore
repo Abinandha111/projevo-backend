@@ -1,5 +1,23 @@
-.env
 
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 venv/
+.venv/
+
+# IDE
+.vscode/
+
+# Local credentials and database exports
+password/
+postgres_export/
+
+# Local test and migration scripts (keep locally)
+export_postgres.py
+import_to_mongodb.py
+test_mongodb.py

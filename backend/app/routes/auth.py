@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends , HTTPException
 from app.utils.security import hash_password , verify_password
-from sqlalchemy.orm import Session
-from app.database.session import get_db
-from app.models.user import User
+
+from app.database.mongodb import database,get_next_id
+
+from datetime import datetime
+
 from app.schemas.user import UserCreate , UserLogin
 from app.utils.jwt_handler import create_access_token
 from app.utils.dependencies import get_current_user
@@ -11,70 +13,80 @@ from app.utils.dependencies import get_current_user
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/register")
-def register(user: UserCreate, db: Session = Depends(get_db)):
+def register(user: UserCreate ):
 
     # check email already exists
-    existing_user = db.query(User).filter(User.email == user.email).first()
-
+    existing_user = database["users"].find_one({
+        "email": user.email
+    })
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
     
 
     # create new user
-    new_user = User(
-        name=user.name,
-        email=user.email,
-        password=hash_password(user.password),
-        role="user"
-    )
+    new_user = {
+        "id": get_next_id("users"),
+        "name": user.name,
+        "email": user.email,
+        "password": hash_password(user.password),
+        "role": "user",
+        "ai_usage_count": 0,
+        "last_reset": datetime.utcnow(),
+        "plan": "free"
+    }
 
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    database["users"].insert_one(new_user)
 
     return {"message": "User registered successfully 🚀"}
 
 @router.post("/login")
-def login(user: UserLogin, db: Session = Depends(get_db)):
+def login(user: UserLogin):
      # find user by email
-    db_user = db.query(User).filter(User.email == user.email).first()
+    db_user = database["users"].find_one({
+        "email": user.email
+    })
 
     # check user exists
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
     # check password
-    if not verify_password(user.password, db_user.password):
+    if not verify_password(user.password, db_user["password"]):
         raise HTTPException(status_code=400, detail="Incorrect password")
     
     token = create_access_token({
-    "user_id": db_user.id,
-    "email": db_user.email
+        "user_id": db_user["id"],
+        "email": db_user["email"]
     })
 
     return {
         "message": "Login successful 🚀",
         "token": token,
         "user": {
-            "id": db_user.id,
-            "name": db_user.name,
-            "email": db_user.email
+            "id": db_user["id"],
+            "name": db_user["name"],
+            "email": db_user["email"]
         }
     }
 
 @router.get("/profile")
-def profile(user=Depends(get_current_user), db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.id == user["user_id"]).first()
+def profile(user=Depends(get_current_user)):
+
+    db_user = database["users"].find_one({
+        "id": user["user_id"]
+    })
+     
     if db_user:
+
         return {
             "message": "Protected route accessed 🔐",
             "user": {
-                "id": db_user.id,
-                "user_id": db_user.id,
-                "name": db_user.name,
-                "email": db_user.email,
-                "role": db_user.role or "user"
+                "id": db_user["id"],
+                "user_id": db_user["id"],
+                "name": db_user["name"],
+                "email": db_user["email"],
+                "role": db_user.get("role", "user")
             }
         }
     return {

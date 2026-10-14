@@ -1,28 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.database.connection import SessionLocal
-from app.models.project import Project
-from app.schemas.project import ProjectCreate, ProjectUpdate
-from app.utils.dependencies import get_current_user
-from app.models.Project_Member import ProjectMember
-from app.models.task import Task
-from app.models.activity import Activity
-from app.models.user import User
-from app.services.gemini_service import validate_project_idea
-router = APIRouter(prefix="/projects", tags=["Projects"])
-
 import secrets
+from fastapi import APIRouter, Depends, HTTPException
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+from app.database.mongodb import database, get_next_id, serialize_doc
+from app.schemas.project import ProjectCreate, ProjectUpdate
+from app.services.gemini_service import validate_project_idea
+from app.utils.dependencies import get_current_user
+
+router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
 @router.post("/")
-def create_project( project: ProjectCreate,db: Session = Depends(get_db),current_user = Depends(get_current_user)):
+def create_project(
+    project: ProjectCreate,
+    current_user=Depends(get_current_user)
+):
     # 1. Validate project idea with AI before database creation
     validation = validate_project_idea(project.title, project.description)
     if validation.get("error"):
@@ -37,87 +28,84 @@ def create_project( project: ProjectCreate,db: Session = Depends(get_db),current
         )
 
     invite_code = secrets.token_hex(4)
-    new_project = Project(
-        title=project.title,
-        description=project.description,
-        user_id = current_user["user_id"],
-        invite_code = invite_code,
-        deadline = project.deadline
-    )
+    project_id = get_next_id("projects")
 
-    db.add(new_project)
-    db.commit()
-    db.refresh(new_project)
+    new_project = {
+        "id": project_id,
+        "title": project.title,
+        "description": project.description,
+        "user_id": current_user["user_id"],
+        "invite_code": invite_code,
+        "deadline": project.deadline,
+        "ai_tasks": None
+    }
+    database["projects"].insert_one(new_project)
 
-    new_member = ProjectMember(
-        project_id=new_project.id,
-        user_id=current_user["user_id"],
-        role="leader"
-    )
+    member_id = get_next_id("project_members")
+    new_member = {
+        "id": member_id,
+        "project_id": project_id,
+        "user_id": current_user["user_id"],
+        "role": "leader"
+    }
+    database["project_members"].insert_one(new_member)
 
-    db.add(new_member)
-    db.commit()
+    user = database["users"].find_one({"id": current_user["user_id"]})
+    user_name = user.get("name", "User") if user else "User"
 
-    user = db.query(User).filter(
-    User.id == current_user["user_id"]
-    ).first()
-
-    activity = Activity(
-    project_id=new_project.id,
-    user_id=current_user["user_id"],
-    activity_type="project_created",
-    message=f'{user.name} created project "{new_project.title}"'
-   )
-
-    db.add(activity)
-    db.commit()
+    activity_id = get_next_id("activities")
+    activity = {
+        "id": activity_id,
+        "project_id": project_id,
+        "user_id": current_user["user_id"],
+        "activity_type": "project_created",
+        "message": f'{user_name} created project "{new_project["title"]}"'
+    }
+    database["activities"].insert_one(activity)
 
     return {
-    "message": "Project created",
-    "project": {
-        "id": new_project.id,
-        "title": new_project.title,
-        "description": new_project.description,
-        "user_id": new_project.user_id,
-        "invite_code": new_project.invite_code,
-        "deadline": new_project.deadline
-        
+        "message": "Project created",
+        "project": {
+            "id": new_project["id"],
+            "title": new_project["title"],
+            "description": new_project["description"],
+            "user_id": new_project["user_id"],
+            "invite_code": new_project["invite_code"],
+            "deadline": new_project["deadline"]
+        }
     }
-}
 
 
 @router.get("/")
-def get_projects(
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
-):
-    memberships = db.query(ProjectMember).filter(
-        ProjectMember.user_id == current_user["user_id"]
-    ).all()
+def get_projects(current_user=Depends(get_current_user)):
+    memberships = list(database["project_members"].find(
+        {"user_id": current_user["user_id"]}
+    ))
 
-    project_ids = [m.project_id for m in memberships]
+    project_ids = [m["project_id"] for m in memberships]
     if not project_ids:
         return []
 
-    projects = db.query(Project).filter(Project.id.in_(project_ids)).all()
-    role_map = {m.project_id: m.role for m in memberships}
+    projects = list(database["projects"].find({"id": {"$in": project_ids}}))
+    role_map = {m["project_id"]: m.get("role", "member") for m in memberships}
 
     result = []
     for project in projects:
-        member_count = db.query(ProjectMember).filter(ProjectMember.project_id == project.id).count()
-        tasks = db.query(Task).filter(Task.project_id == project.id).all()
-        completed_tasks = len([t for t in tasks if t.status == "completed"])
+        p_id = project["id"]
+        member_count = database["project_members"].count_documents({"project_id": p_id})
+        tasks = list(database["tasks"].find({"project_id": p_id}))
+        completed_tasks = len([t for t in tasks if t.get("status") == "completed"])
         total_tasks = len(tasks)
         progress = round((completed_tasks / total_tasks * 100), 1) if total_tasks > 0 else 0
 
         result.append({
-            "id": project.id,
-            "title": project.title,
-            "description": project.description,
-            "user_id": project.user_id,
-            "invite_code": project.invite_code,
-            "deadline": project.deadline,
-            "role": role_map.get(project.id, "member"),
+            "id": p_id,
+            "title": project.get("title", ""),
+            "description": project.get("description"),
+            "user_id": project.get("user_id"),
+            "invite_code": project.get("invite_code"),
+            "deadline": project.get("deadline"),
+            "role": role_map.get(p_id, "member"),
             "member_count": member_count,
             "total_tasks": total_tasks,
             "completed_tasks": completed_tasks,
@@ -126,45 +114,44 @@ def get_projects(
 
     return result
 
+
 @router.put("/{project_id}")
 def update_project(
     project_id: int,
     project: ProjectUpdate,
-    db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    db_project = db.query(Project).filter(
-        Project.id == project_id,
-        Project.user_id == current_user["user_id"]
-    ).first()
+    db_project = database["projects"].find_one({
+        "id": project_id,
+        "user_id": current_user["user_id"]
+    })
 
     if not db_project:
         return {"error": "Project not found"}
 
-    db_project.title = project.title
-    db_project.description = project.description
+    database["projects"].update_one(
+        {"id": project_id},
+        {"$set": {"title": project.title, "description": project.description}}
+    )
 
-    db.commit()
-    db.refresh(db_project)
-
+    updated_project = database["projects"].find_one({"id": project_id})
     return {
         "message": "Project updated successfully",
-        "project": db_project
+        "project": serialize_doc(updated_project)
     }
 
 
 @router.delete("/{project_id}")
 def delete_project(
     project_id: int,
-    db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
     # Only project leader can delete the project
-    leader = db.query(ProjectMember).filter(
-        ProjectMember.project_id == project_id,
-        ProjectMember.user_id == current_user["user_id"],
-        ProjectMember.role == "leader"
-    ).first()
+    leader = database["project_members"].find_one({
+        "project_id": project_id,
+        "user_id": current_user["user_id"],
+        "role": "leader"
+    })
 
     if not leader:
         raise HTTPException(
@@ -172,16 +159,16 @@ def delete_project(
             detail="Only the project leader can delete this project"
         )
 
-    project = db.query(Project).filter(Project.id == project_id).first()
+    project = database["projects"].find_one({"id": project_id})
     if not project:
         raise HTTPException(
             status_code=404,
             detail="Project not found"
         )
 
-    db.query(Task).filter(Task.project_id == project_id).delete()
-    db.query(ProjectMember).filter(ProjectMember.project_id == project_id).delete()
-    db.delete(project)
-    db.commit()
+    database["tasks"].delete_many({"project_id": project_id})
+    database["project_members"].delete_many({"project_id": project_id})
+    database["activities"].delete_many({"project_id": project_id})
+    database["projects"].delete_one({"id": project_id})
 
     return {"message": "Project deleted successfully"}

@@ -1,41 +1,24 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.database.connection import SessionLocal
 
-from app.models.project import Project
-from app.models.task import Task
-from app.models.user import User
-from app.models.Project_Member import ProjectMember
-
+from app.database.mongodb import database, get_next_id
 from app.services.gemini_service import generate_task_breakdown_with_retry
 from app.utils.ai_limit import check_ai_limit, increment_ai_usage
 from app.utils.dependencies import get_current_user
 
-import json
-
 router = APIRouter(prefix="/ai", tags=["AI"])
-
-
-# ---------------- DB ----------------
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def safe_parse_ai(ai_text: str):
     try:
         return json.loads(ai_text)
-    except:
+    except Exception:
         return None
 
 
 # ---------------- BREAKDOWN ----------------
 @router.get("/breakdown")
 def ai_breakdown(project_name: str):
-
     ai_tasks = generate_task_breakdown_with_retry(project_name)
 
     if ai_tasks is None:
@@ -54,11 +37,9 @@ def ai_breakdown(project_name: str):
 @router.post("/generate-tasks")
 def generate_and_save_tasks(
     project_id: int,
-    db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
-    db_user = db.query(User).filter(User.id == user["user_id"]).first()
+    db_user = database["users"].find_one({"id": user["user_id"]})
 
     if not db_user:
         return {"error": "User not found"}
@@ -67,33 +48,22 @@ def generate_and_save_tasks(
     if not check_ai_limit(db_user):
         raise HTTPException(status_code=429, detail="AI limit exceeded")
 
-    project = db.query(Project).filter(Project.id == project_id).first()
+    project = database["projects"].find_one({"id": project_id})
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    leader = db.query(ProjectMember).filter(
-        ProjectMember.project_id == project_id,
-        ProjectMember.user_id == user["user_id"],
-        ProjectMember.role == "leader"
-    ).first()
+    leader = database["project_members"].find_one({
+        "project_id": project_id,
+        "user_id": user["user_id"],
+        "role": "leader"
+    })
 
     if not leader:
         raise HTTPException(status_code=403, detail="Only the project leader can generate AI tasks")
 
-    # CACHE CHECK
-    # if project.ai_tasks:
-    #     try:
-    #         json.loads(project.ai_tasks)
-    #         return {
-    #             "message": "From cache",
-    #             "saved_tasks": project.ai_tasks.split("\n")
-    #         }
-    #     except:
-    #         pass
-
     # GEMINI CALL
-    ai_tasks = generate_task_breakdown_with_retry(project.title)
+    ai_tasks = generate_task_breakdown_with_retry(project.get("title", ""))
 
     if ai_tasks is None:
         return {
@@ -115,14 +85,13 @@ def generate_and_save_tasks(
         }
 
     # SAVE CACHE
-    project.ai_tasks = ai_tasks
-    db.add(project)
+    database["projects"].update_one(
+        {"id": project_id},
+        {"$set": {"ai_tasks": ai_tasks}}
+    )
 
     # INCREMENT USAGE
     increment_ai_usage(db_user)
-
-    # SAVE TASKS
-    saved_tasks = []
 
     # SAVE TASKS
     saved_tasks = []
@@ -131,35 +100,34 @@ def generate_and_save_tasks(
         structured_ai.get("epics", []),
         start=1
     ):
-
         epic_name = epic.get("name", "General")
 
         for task in epic.get("tasks", []):
-
             clean_task = f"[{epic_name}] {task}"
 
-            existing_task = db.query(Task).filter(
-                Task.project_id == project.id,
-                Task.title == clean_task
-            ).first()
+            existing_task = database["tasks"].find_one({
+                "project_id": project_id,
+                "title": clean_task
+            })
 
             if existing_task:
-
-                existing_task.epic_order = epic_index
-
-            else:
-
-                new_task = Task(
-                    title=clean_task,
-                    project_id=project.id,
-                    status="pending",
-                    epic_order=epic_index
+                database["tasks"].update_one(
+                    {"id": existing_task["id"]},
+                    {"$set": {"epic_order": epic_index}}
                 )
-
-                db.add(new_task)
+            else:
+                task_id = get_next_id("tasks")
+                new_task = {
+                    "id": task_id,
+                    "title": clean_task,
+                    "project_id": project_id,
+                    "status": "pending",
+                    "epic_order": epic_index,
+                    "assigned_to": None,
+                    "due_date": None
+                }
+                database["tasks"].insert_one(new_task)
                 saved_tasks.append(clean_task)
-
-        db.commit()
 
     return {
         "message": "AI generated + cached successfully",

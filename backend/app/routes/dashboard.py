@@ -1,10 +1,6 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
 
-from app.database.connection import SessionLocal
-from app.models.project import Project
-from app.models.task import Task
-from app.models.Project_Member import ProjectMember
+from app.database.mongodb import database
 from app.utils.dependencies import get_current_user
 
 router = APIRouter(
@@ -13,54 +9,53 @@ router = APIRouter(
 )
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 @router.get("/stats")
-def get_dashboard_stats(
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
-):
-    memberships = db.query(ProjectMember).filter(
-        ProjectMember.user_id == current_user["user_id"]
-    ).all()
+def get_dashboard_stats(current_user=Depends(get_current_user)):
+    memberships = list(
+        database["project_members"].find({"user_id": current_user["user_id"]})
+    )
 
-    project_ids = [m.project_id for m in memberships]
-    projects = db.query(Project).filter(Project.id.in_(project_ids)).all() if project_ids else []
+    project_ids = [m["project_id"] for m in memberships]
+    projects = (
+        list(database["projects"].find({"id": {"$in": project_ids}}))
+        if project_ids
+        else []
+    )
+    project_map = {p["id"]: p for p in projects}
 
     all_visible_tasks = []
     recent_projects = []
 
     for m in memberships:
-        p = next((proj for proj in projects if proj.id == m.project_id), None)
+        p = project_map.get(m["project_id"])
         if not p:
             continue
 
-        if m.role == "leader":
-            proj_tasks = db.query(Task).filter(Task.project_id == p.id).all()
+        p_id = p["id"]
+        role = m.get("role", "member")
+
+        if role == "leader":
+            proj_tasks = list(database["tasks"].find({"project_id": p_id}))
         else:
-            proj_tasks = db.query(Task).filter(
-                Task.project_id == p.id,
-                Task.assigned_to == current_user["user_id"]
-            ).all()
+            proj_tasks = list(
+                database["tasks"].find({
+                    "project_id": p_id,
+                    "assigned_to": current_user["user_id"]
+                })
+            )
 
         all_visible_tasks.extend(proj_tasks)
 
-        p_completed = len([t for t in proj_tasks if t.status == "completed"])
+        p_completed = len([t for t in proj_tasks if t.get("status") == "completed"])
         p_total = len(proj_tasks)
         p_progress = round((p_completed / p_total) * 100, 1) if p_total > 0 else 0
 
         recent_projects.append({
-            "id": p.id,
-            "title": p.title,
-            "description": p.description,
-            "deadline": p.deadline,
-            "role": m.role,
+            "id": p_id,
+            "title": p.get("title", ""),
+            "description": p.get("description"),
+            "deadline": p.get("deadline"),
+            "role": role,
             "total_tasks": p_total,
             "completed_tasks": p_completed,
             "progress": p_progress
@@ -70,21 +65,18 @@ def get_dashboard_stats(
     total_tasks = len(all_visible_tasks)
 
     completed_tasks = len(
-        [task for task in all_visible_tasks if task.status == "completed"]
+        [t for t in all_visible_tasks if t.get("status") == "completed"]
     )
     in_progress_tasks = len(
-        [task for task in all_visible_tasks if task.status == "in_progress"]
+        [t for t in all_visible_tasks if t.get("status") == "in_progress"]
     )
     pending_tasks = len(
-        [task for task in all_visible_tasks if task.status == "pending"]
+        [t for t in all_visible_tasks if t.get("status") == "pending"]
     )
 
     progress = 0
     if total_tasks > 0:
-        progress = round(
-            (completed_tasks / total_tasks) * 100,
-            1
-        )
+        progress = round((completed_tasks / total_tasks) * 100, 1)
 
     return {
         "total_projects": total_projects,

@@ -1,15 +1,9 @@
-import os
+"""
+Database connection module.
+Migrated from PostgreSQL/SQLAlchemy to MongoDB Atlas.
+"""
 
-from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from app.database.mongodb import client, database, check_mongodb_connection
 
-load_dotenv()
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-engine = create_engine(DATABASE_URL)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
+# Re-export MongoDB database objects for convenience
+__all__ = ["client", "database", "check_mongodb_connection"]

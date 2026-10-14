@@ -1,8 +1,11 @@
-from app.database.connection import SessionLocal
+"""
+Database session module.
+Migrated from PostgreSQL/SQLAlchemy to MongoDB Atlas.
+"""
+
+from app.database.mongodb import database
+
 
 def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    """Compatibility provider returning the MongoDB database instance."""
+    return database

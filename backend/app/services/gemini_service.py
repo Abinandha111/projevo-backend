@@ -3,6 +3,7 @@ import time
 import json
 from dotenv import load_dotenv
 from google import genai
+from groq import Groq
 
 
 load_dotenv()
@@ -10,6 +11,9 @@ load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
 client = genai.Client(api_key=api_key)
+
+groq_api_key = os.getenv("GROQ_API_KEY")
+groq_client = Groq(api_key=groq_api_key)
 
 
 
@@ -23,6 +27,46 @@ def clean_ai_response(text: str):
     text = text.replace("```", "")
     return text.strip()
 
+def generate_task_breakdown_with_groq(project_name):
+    prompt = f"""
+You are a senior software project planner.
+
+Break the project into structured JSON.
+
+Project:
+{project_name}
+
+Return ONLY JSON:
+{{
+  "project_type": "",
+  "epics": [
+    {{
+      "name": "",
+      "tasks": [""]
+    }}
+  ]
+}}
+"""
+
+    try:
+        response = groq_client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.2
+        )
+
+        return clean_ai_response(
+            response.choices[0].message.content
+        )
+
+    except Exception as e:
+        print("⚠️ Groq fallback error:", e)
+        return None
 
 # 🔥 VALIDATE PROJECT IDEA
 def validate_project_idea(title: str, description: str = None) -> dict:
@@ -142,6 +186,7 @@ Return ONLY JSON:
 # 🔥 RETRY SYSTEM
 def generate_task_breakdown_with_retry(project_name, retries=2):
 
+    # 1. Try Gemini
     for attempt in range(retries):
         try:
             response = generate_task_breakdown(project_name)
@@ -150,7 +195,19 @@ def generate_task_breakdown_with_retry(project_name, retries=2):
                 return response
 
         except Exception as e:
-            print(f"⚠️ Retry {attempt+1} failed:", e)
+            print(f"⚠️ Gemini retry {attempt + 1} failed:", e)
             time.sleep(1)
+
+    # 2. Gemini failed → Try Groq fallback
+    print("⚠️ Gemini unavailable. Trying Groq fallback...")
+
+    groq_response = generate_task_breakdown_with_groq(project_name)
+
+    if groq_response:
+        print("✅ Groq fallback successful")
+        return groq_response
+
+    # 3. Both failed
+    print("❌ Gemini and Groq failed")
 
     return None

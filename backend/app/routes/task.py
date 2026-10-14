@@ -1,17 +1,10 @@
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from datetime import date
 from pydantic import BaseModel
 
-from app.database.connection import SessionLocal
-from app.models.task import Task
-from app.models.project import Project
+from app.database.mongodb import database, get_next_id, serialize_doc, serialize_docs
 from app.schemas.task import TaskCreate, TaskStatusUpdate
 from app.utils.dependencies import get_current_user
-
-from app.models.Project_Member import ProjectMember
-from app.models.activity import Activity
-from app.models.user import User
 
 router = APIRouter(
     prefix="/tasks",
@@ -19,139 +12,133 @@ router = APIRouter(
 )
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 class AssignTask(BaseModel):
     user_id: int
 
 
+def _parse_due_date(due_date_val) -> date | None:
+    if not due_date_val:
+        return None
+    if isinstance(due_date_val, date) and not isinstance(due_date_val, datetime):
+        return due_date_val
+    if isinstance(due_date_val, datetime):
+        return due_date_val.date()
+    if isinstance(due_date_val, str):
+        for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(due_date_val, fmt).date()
+            except ValueError:
+                continue
+    return None
+
 
 @router.get("/my/assigned")
-def get_my_assigned_tasks(
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
-):
-    tasks = db.query(Task).filter(
-        Task.assigned_to == current_user["user_id"]
-    ).order_by(
-        Task.epic_order,
-        Task.id
-    ).all()
+def get_my_assigned_tasks(current_user=Depends(get_current_user)):
+    tasks = list(
+        database["tasks"]
+        .find({"assigned_to": current_user["user_id"]})
+        .sort([("epic_order", 1), ("id", 1)])
+    )
 
     return {
-        "tasks": tasks
+        "tasks": serialize_docs(tasks)
     }
+
 
 @router.put("/{task_id}/assign")
 def assign_task(
     task_id: int,
     data: AssignTask,
-    db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    task = db.query(Task).filter(
-        Task.id == task_id
-    ).first()
-
+    task = database["tasks"].find_one({"id": task_id})
     if not task:
-        return {
-            "message": "Task not found"
-        }
+        return {"message": "Task not found"}
 
-    leader = db.query(ProjectMember).filter(
-        ProjectMember.project_id == task.project_id,
-        ProjectMember.user_id == current_user["user_id"],
-        ProjectMember.role == "leader"
-    ).first()
-
+    leader = database["project_members"].find_one({
+        "project_id": task["project_id"],
+        "user_id": current_user["user_id"],
+        "role": "leader"
+    })
     if not leader:
-        return {
-            "message": "Only project leader can assign tasks"
-        }
+        return {"message": "Only project leader can assign tasks"}
 
-    member = db.query(ProjectMember).filter(
-        ProjectMember.project_id == task.project_id,
-        ProjectMember.user_id == data.user_id
-    ).first()
-
+    member = database["project_members"].find_one({
+        "project_id": task["project_id"],
+        "user_id": data.user_id
+    })
     if not member:
-        return {
-            "message": "User is not a project member"
-        }
-    assigned_user = db.query(User).filter(
-        User.id == data.user_id
-    ).first()
+        return {"message": "User is not a project member"}
 
-    leader_user = db.query(User).filter(
-        User.id == current_user["user_id"]
-    ).first()
+    assigned_user = database["users"].find_one({"id": data.user_id})
+    leader_user = database["users"].find_one({"id": current_user["user_id"]})
 
-    task.assigned_to = data.user_id
+    leader_name = leader_user.get("name", "Leader") if leader_user else "Leader"
+    assigned_name = assigned_user.get("name", "User") if assigned_user else "User"
 
-    activity = Activity(
-        project_id = task.project_id,
-        user_id = current_user["user_id"],
-        activity_type = "task_assigned",
-        message = f"{leader_user.name} assigned {task.title} to {assigned_user.name}"
+    database["tasks"].update_one(
+        {"id": task_id},
+        {"$set": {"assigned_to": data.user_id}}
     )
 
-    db.add(activity)
-
-    db.commit()
-    db.refresh(task)
+    activity_id = get_next_id("activities")
+    activity = {
+        "id": activity_id,
+        "project_id": task["project_id"],
+        "user_id": current_user["user_id"],
+        "activity_type": "task_assigned",
+        "message": f"{leader_name} assigned {task['title']} to {assigned_name}"
+    }
+    database["activities"].insert_one(activity)
 
     return {
         "message": "Task assigned successfully",
-        "task_id": task.id,
-        "assigned_to": task.assigned_to
+        "task_id": task_id,
+        "assigned_to": data.user_id
     }
+
 
 @router.post("/")
 def create_task(
     task: TaskCreate,
-    db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    project = db.query(Project).filter(
-        Project.id == task.project_id,
-        Project.user_id == current_user["user_id"]
-    ).first()
+    project = database["projects"].find_one({
+        "id": task.project_id,
+        "user_id": current_user["user_id"]
+    })
 
     if not project:
         return {"error": "Project not found"}
 
-    new_task = Task(
-        title=task.title,
-        project_id=task.project_id,
-        due_date = task.due_date
-    )
+    task_id = get_next_id("tasks")
+    new_task = {
+        "id": task_id,
+        "title": task.title,
+        "epic_order": 0,
+        "status": "pending",
+        "project_id": task.project_id,
+        "assigned_to": None,
+        "due_date": str(task.due_date) if task.due_date else None
+    }
 
-    db.add(new_task)
-    db.commit()
-    db.refresh(new_task)
+    database["tasks"].insert_one(new_task)
 
     return {
         "message": "Task created",
-        "task": new_task
+        "task": serialize_doc(new_task)
     }
 
 
 @router.get("/{project_id}")
 def get_tasks(
     project_id: int,
-    db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    member = db.query(ProjectMember).filter(
-        ProjectMember.project_id == project_id,
-        ProjectMember.user_id == current_user["user_id"]
-    ).first()
+    member = database["project_members"].find_one({
+        "project_id": project_id,
+        "user_id": current_user["user_id"]
+    })
 
     if not member:
         raise HTTPException(
@@ -159,125 +146,119 @@ def get_tasks(
             detail="You are not a member of this project"
         )
 
-    if member.role == "leader":
-
-        tasks = db.query(Task).filter(
-            Task.project_id == project_id
-        ).order_by(
-            Task.epic_order,
-            Task.id
-            ).all()
+    if member.get("role") == "leader":
+        tasks = list(
+            database["tasks"]
+            .find({"project_id": project_id})
+            .sort([("epic_order", 1), ("id", 1)])
+        )
     else:
+        tasks = list(
+            database["tasks"]
+            .find({
+                "project_id": project_id,
+                "assigned_to": current_user["user_id"]
+            })
+            .sort([("epic_order", 1), ("id", 1)])
+        )
 
-        tasks = db.query(Task).filter(
-            Task.project_id == project_id,
-            Task.assigned_to == current_user["user_id"]
-        ).order_by(
-            Task.epic_order,
-            Task.id
-        ).all()
-
-    
     task_results = []
+    today = date.today()
 
     for task in tasks:
-        if task.status == "completed":
+        parsed_due = _parse_due_date(task.get("due_date"))
+
+        if task.get("status") == "completed":
             deadline_status = "completed"
-        elif task.due_date is None:
+        elif parsed_due is None:
             deadline_status = "no_deadline"
-        elif task.due_date < date.today():
+        elif parsed_due < today:
             deadline_status = "overdue"
         else:
             deadline_status = "upcoming"
 
         task_results.append({
-            "id": task.id,
-            "title": task.title,
-            "status": task.status,
-            "due_date": task.due_date,
-            "assigned_to": task.assigned_to,
-            "epic_order": task.epic_order,
-            "project_id": task.project_id,
+            "id": task["id"],
+            "title": task.get("title", ""),
+            "status": task.get("status", "pending"),
+            "due_date": task.get("due_date"),
+            "assigned_to": task.get("assigned_to"),
+            "epic_order": task.get("epic_order", 0),
+            "project_id": task.get("project_id"),
             "deadline_status": deadline_status
         })
-        
+
     return {
         "project_id": project_id,
         "tasks": task_results
     }
 
+
 @router.put("/{task_id}")
 def update_task_status(
     task_id: int,
     task_data: TaskStatusUpdate,
-    db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    task = db.query(Task).filter(
-        Task.id == task_id
-    ).first()
-
+    task = database["tasks"].find_one({"id": task_id})
     if not task:
         return {"error": "Task not found"}
 
-    member = db.query(ProjectMember).filter(
-        ProjectMember.project_id == task.project_id,
-        ProjectMember.user_id == current_user["user_id"]
-    ).first()
+    member = database["project_members"].find_one({
+        "project_id": task["project_id"],
+        "user_id": current_user["user_id"]
+    })
 
     if not member:
         return {"error": "Unauthorized"}
 
-    if member.role != "leader" and task.assigned_to != current_user["user_id"]:
+    if member.get("role") != "leader" and task.get("assigned_to") != current_user["user_id"]:
         return {"error": "You can only update your assigned task"}
-    old_status = task.status
-    task.status = task_data.status
-    
+
+    old_status = task.get("status")
+    database["tasks"].update_one(
+        {"id": task_id},
+        {"$set": {"status": task_data.status}}
+    )
 
     if task_data.status == "completed" and old_status != "completed":
-        user=db.query(User).filter(
-            User.id == current_user["user_id"]
-        ).first()
+        user = database["users"].find_one({"id": current_user["user_id"]})
+        user_name = user.get("name", "User") if user else "User"
 
-        activity = Activity(
-            project_id  = task.project_id,
-            user_id = current_user["user_id"],
-            activity_type = "task_completed",
-            message=f'{user.name} completed "{task.title}"' 
-        )
+        activity_id = get_next_id("activities")
+        activity = {
+            "id": activity_id,
+            "project_id": task["project_id"],
+            "user_id": current_user["user_id"],
+            "activity_type": "task_completed",
+            "message": f'{user_name} completed "{task.get("title", "")}"'
+        }
+        database["activities"].insert_one(activity)
 
-        db.add(activity)
-    db.commit()
-    db.refresh(task)
-
+    updated_task = database["tasks"].find_one({"id": task_id})
     return {
         "message": "Task updated",
-        "task": task
+        "task": serialize_doc(updated_task)
     }
+
 
 @router.delete("/{task_id}")
 def delete_task(
     task_id: int,
-    db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    task = db.query(Task).filter(
-        Task.id == task_id
-    ).first()
-
+    task = database["tasks"].find_one({"id": task_id})
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    leader = db.query(ProjectMember).filter(
-        ProjectMember.project_id == task.project_id,
-        ProjectMember.user_id == current_user["user_id"],
-        ProjectMember.role == "leader"
-    ).first()
+    leader = database["project_members"].find_one({
+        "project_id": task["project_id"],
+        "user_id": current_user["user_id"],
+        "role": "leader"
+    })
 
     if not leader:
         raise HTTPException(status_code=403, detail="Only the project leader can delete tasks")
 
-    db.delete(task)
-    db.commit()
-
+    database["tasks"].delete_one({"id": task_id})
     return {"message": "Task deleted successfully"}

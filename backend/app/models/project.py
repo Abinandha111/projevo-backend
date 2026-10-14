@@ -1,17 +1,29 @@
-from sqlalchemy import Column, Integer, String, ForeignKey,Text
-from app.database.connection import Base
+class Project:
+    def __init__(
+        self,
+        id=None,
+        title=None,
+        description=None,
+        user_id=None,
+        ai_tasks=None,
+        invite_code=None,
+        deadline=None
+    ):
+        self.id = id
+        self.title = title
+        self.description = description
+        self.user_id = user_id
+        self.ai_tasks = ai_tasks
+        self.invite_code = invite_code
+        self.deadline = deadline
 
-class Project(Base):
-    __tablename__ = "projects"
-
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False)
-    description = Column(String)
-
-    user_id = Column(Integer, ForeignKey("users.id"))
-
-    ai_tasks = Column(Text, nullable=True)
-
-    invite_code = Column(String, unique=True, nullable=True )
-
-    deadline = Column(String, nullable=True)
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "user_id": self.user_id,
+            "ai_tasks": self.ai_tasks,
+            "invite_code": self.invite_code,
+            "deadline": self.deadline
+        }

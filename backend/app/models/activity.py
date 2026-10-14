@@ -1,30 +1,23 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
-from app.database.connection import Base
+class Activity:
+    def __init__(
+        self,
+        id=None,
+        project_id=None,
+        user_id=None,
+        activity_type=None,
+        message=None
+    ):
+        self.id = id
+        self.project_id = project_id
+        self.user_id = user_id
+        self.activity_type = activity_type
+        self.message = message
 
-
-class Activity(Base):
-    __tablename__ = "activities"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    project_id = Column(
-        Integer,
-        ForeignKey("projects.id"),
-        nullable=False
-    )
-
-    user_id = Column(
-        Integer,
-        ForeignKey("users.id"),
-        nullable=False
-    )
-
-    activity_type = Column(
-        String,
-        nullable=False
-    )
-
-    message = Column(
-        String,
-        nullable=False
-    )
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "project_id": self.project_id,
+            "user_id": self.user_id,
+            "activity_type": self.activity_type,
+            "message": self.message
+        }

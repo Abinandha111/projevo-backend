@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes import auth, project, task, dashboard, ai, members, activity
-from app.database.connection import Base, engine
+from app.database.mongodb import check_mongodb_connection
 
 import app.models.user
 import app.models.project
@@ -28,8 +28,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# DB create tables
-Base.metadata.create_all(bind=engine)
+# Optional MongoDB connection check on startup
+@app.on_event("startup")
+def startup_db_check():
+    try:
+        check_mongodb_connection()
+        print(" Connected to MongoDB Atlas successfully")
+    except Exception as e:
+        print(" MongoDB Atlas connection warning:", e)
 
 # routes
 app.include_router(auth.router)
@@ -39,6 +45,7 @@ app.include_router(task.router)
 app.include_router(ai.router)
 app.include_router(members.router)
 app.include_router(activity.router)
+
 # home route
 @app.get("/")
 def home():

@@ -1,18 +1,23 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Integer, String
-from app.database.connection import Base
 
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    email = Column(String, unique=True, index=True, nullable=False)
-    password = Column(String, nullable=False)
-
-    role = Column(String, default="user") 
-    ai_usage_count = Column(Integer, default=0)
-    last_reset = Column(DateTime, default=datetime.utcnow)
-
-    plan = Column(String, default="free")
+class User:
+    def __init__(
+        self,
+        id=None,
+        name=None,
+        email=None,
+        password=None,
+        role="user",
+        ai_usage_count=0,
+        last_reset=None,
+        plan="free"
+    ):
+        self.id = id
+        self.name = name
+        self.email = email
+        self.password = password
+        self.role = role
+        self.ai_usage_count = ai_usage_count
+        self.last_reset = last_reset or datetime.utcnow()
+        self.plan = plan

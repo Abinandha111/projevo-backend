@@ -1,9 +1,6 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-
-from app.database.connection import SessionLocal
-from app.models.activity import Activity
 from app.models.Project_Member import ProjectMember
+from app.database.mongodb import database, serialize_docs
 from app.utils.dependencies import get_current_user
 
 router = APIRouter(
@@ -12,28 +9,25 @@ router = APIRouter(
 )
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 @router.get("/recent")
-def get_recent_activities(
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
-):
-    activities = db.query(Activity).join(
-        ProjectMember, 
-        Activity.project_id == ProjectMember.project_id
-    ).filter(
-        ProjectMember.user_id == current_user["user_id"]
-    ).order_by(
-        Activity.id.desc()
-    ).limit(10).all()
+def get_recent_activities(current_user=Depends(get_current_user)):
+    memberships = list(
+        database["project_members"].find({"user_id": current_user["user_id"]})
+    )
+
+    project_ids = [m["project_id"] for m in memberships]
+    if not project_ids:
+        return {
+            "activities": []
+        }
+
+    activities = list(
+        database["activities"]
+        .find({"project_id": {"$in": project_ids}})
+        .sort([("id", -1)])
+        .limit(10)
+    )
 
     return {
-        "activities": activities
+        "activities": serialize_docs(activities)
     }
