@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.database.mongodb import database, get_next_id, serialize_doc, serialize_docs
-from app.schemas.task import TaskCreate, TaskStatusUpdate
+from app.schemas.task import TaskCreate, TaskStatusUpdate, TaskDeadlineUpdate
 from app.utils.dependencies import get_current_user
 
 router = APIRouter(
@@ -240,6 +240,45 @@ def update_task_status(
         "message": "Task updated",
         "task": serialize_doc(updated_task)
     }
+
+@router.put("/{task_id}/deadline")
+def update_task_deadline(
+    task_id:int,
+    data:TaskDeadlineUpdate,
+    current_user=Depends(get_current_user)
+):
+    task=database["tasks"].find_one({"id":task_id})
+
+    if not task:
+        raise HTTPException(status_code=404,detail="task not found")
+
+    leader = database["project_members"].find_one({
+        "project_id": task["project_id"],
+        "user_id": current_user["user_id"],
+        "role": "leader"
+    })
+
+    if not leader:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the project leader can update the deadline"
+        )
+
+    database["tasks"].update_one(
+        {"id": task_id},
+        {"$set": {
+            "due_date": str(data.due_date) if data.due_date else None
+        }}
+    )
+
+    updated_task = database["tasks"].find_one({"id": task_id})
+
+    return {
+        "message": "Task deadline updated successfully",
+        "task": serialize_doc(updated_task)
+    }
+
+
 
 
 @router.delete("/{task_id}")

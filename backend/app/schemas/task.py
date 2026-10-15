@@ -8,3 +8,7 @@ class TaskCreate(BaseModel):
 
 class TaskStatusUpdate(BaseModel):
     status: str
+
+
+class TaskDeadlineUpdate(BaseModel):
+    due_date: date | None = None
