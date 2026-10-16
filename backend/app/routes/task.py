@@ -6,6 +6,8 @@ from app.database.mongodb import database, get_next_id, serialize_doc, serialize
 from app.schemas.task import TaskCreate, TaskStatusUpdate, TaskDeadlineUpdate
 from app.utils.dependencies import get_current_user
 
+from app.services.notification_service import create_notification
+
 router = APIRouter(
     prefix="/tasks",
     tags=["Tasks"]
@@ -90,6 +92,14 @@ def assign_task(
         "message": f"{leader_name} assigned {task['title']} to {assigned_name}"
     }
     database["activities"].insert_one(activity)
+
+    create_notification(
+        user_id=data.user_id,
+        message=f'you have been assigned a new task: "{task["title"]}"',
+        notification_type="task_assigned",
+        project_id=task["project_id"],
+        task_id=task_id
+    )
 
     return {
         "message": "Task assigned successfully",
