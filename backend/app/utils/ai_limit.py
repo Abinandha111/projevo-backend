@@ -86,8 +86,12 @@ def check_ai_limit(user):
 
     cooldown_until = _parse_datetime(cooldown_until)
 
+    print("LIMIT CHECK:", "count =", user.get("ai_usage_count"), "cooldown =", cooldown_until)
+
     if cooldown_until and now < cooldown_until:
         return False
+
+    
 
     count = (
         user.get("ai_usage_count", 0)
