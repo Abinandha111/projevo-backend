@@ -76,22 +76,11 @@ def reset_if_needed(user):
 def check_ai_limit(user):
     user = reset_if_needed(user)
 
-    now = datetime.utcnow()
-
-    cooldown_until = (
-        user.get("ai_cooldown_until")
+    user_id = (
+        user.get("id")
         if isinstance(user, dict)
-        else getattr(user, "ai_cooldown_until", None)
+        else getattr(user, "id", None)
     )
-
-    cooldown_until = _parse_datetime(cooldown_until)
-
-    print("LIMIT CHECK:", "count =", user.get("ai_usage_count"), "cooldown =", cooldown_until)
-
-    if cooldown_until and now < cooldown_until:
-        return False
-
-    
 
     count = (
         user.get("ai_usage_count", 0)
@@ -99,7 +88,42 @@ def check_ai_limit(user):
         else getattr(user, "ai_usage_count", 0)
     )
 
-    return count < AI_LIMIT
+    cooldown_until = _parse_datetime(
+        user.get("ai_cooldown_until")
+        if isinstance(user, dict)
+        else getattr(user, "ai_cooldown_until", None)
+    )
+
+    now = datetime.utcnow()
+
+    # If fewer than 20 uses, clear any stale cooldown
+    if count < AI_LIMIT:
+        if cooldown_until is not None:
+            if isinstance(user, dict):
+                user["ai_cooldown_until"] = None
+            else:
+                user.ai_cooldown_until = None
+
+            if user_id is not None:
+                database["users"].update_one(
+                    {"id": user_id},
+                    {"$set": {"ai_cooldown_until": None}}
+                )
+
+        return True
+
+    # If 20 uses reached and cooldown is active, block usage
+    if cooldown_until and now < cooldown_until:
+        return False
+
+    # Cooldown expired; reset usage and allow generation
+    if cooldown_until and now >= cooldown_until:
+        reset_if_needed(user)
+        return True
+
+    # Safety fallback for count at/above limit
+    return False
+
 
 
 
