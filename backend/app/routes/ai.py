@@ -178,7 +178,7 @@ def get_project_summary(
 
     project_data = {
         "project_title":project.get("title", ""),
-        "project_description":project.get("description" ""),
+        "project_description":project.get("description", ""),
         "project_deadline": project.get("deadline"),
         "total_tasks": total_tasks,
         "completed_tasks": completed_tasks,

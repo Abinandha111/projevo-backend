@@ -11,7 +11,9 @@ class User:
         role="user",
         ai_usage_count=0,
         last_reset=None,
+        ai_cooldown_until=None,
         plan="free"
+        
     ):
         self.id = id
         self.name = name
@@ -20,4 +22,5 @@ class User:
         self.role = role
         self.ai_usage_count = ai_usage_count
         self.last_reset = last_reset or datetime.utcnow()
+        self.ai_cooldown_until = ai_cooldown_until
         self.plan = plan

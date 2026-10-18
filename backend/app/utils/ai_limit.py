@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
 from app.database.mongodb import database
 
-AI_LIMIT = 20  # per day per user
+AI_LIMIT = 20  # cumulative uses per user before cooldown
+
+AI_COOLDOWN_HOURS = 8
 
 
 def _parse_datetime(val):
@@ -23,54 +25,119 @@ def _parse_datetime(val):
     return None
 
 
+
+
 def reset_if_needed(user):
     now = datetime.utcnow()
-    user_id = user.get("id") if isinstance(user, dict) else getattr(user, "id", None)
-    raw_last_reset = user.get("last_reset") if isinstance(user, dict) else getattr(user, "last_reset", None)
-    last_reset_dt = _parse_datetime(raw_last_reset)
 
-    needs_reset = False
-    if not last_reset_dt or last_reset_dt < (now - timedelta(days=1)):
-        needs_reset = True
+    user_id = (
+        user.get("id")
+        if isinstance(user, dict)
+        else getattr(user, "id", None)
+    )
 
-    if needs_reset:
+    raw_cooldown = (
+        user.get("ai_cooldown_until")
+        if isinstance(user, dict)
+        else getattr(user, "ai_cooldown_until", None)
+    )
+
+    cooldown_until = _parse_datetime(raw_cooldown)
+
+    # Cooldown is still active
+    if cooldown_until and now < cooldown_until:
+        return user
+
+    # Cooldown finished: restore a fresh set of 20 uses
+    if cooldown_until and now >= cooldown_until:
+        updates = {
+            "ai_usage_count": 0,
+            "ai_cooldown_until": None,
+            "last_reset": now,
+        }
+
         if isinstance(user, dict):
-            user["ai_usage_count"] = 0
-            user["last_reset"] = now
+            user.update(updates)
         else:
             user.ai_usage_count = 0
+            user.ai_cooldown_until = None
             user.last_reset = now
 
-        if user_id:
+        if user_id is not None:
             database["users"].update_one(
                 {"id": user_id},
-                {"$set": {"ai_usage_count": 0, "last_reset": now}}
+                {"$set": updates},
             )
 
     return user
 
 
+
 def check_ai_limit(user):
     user = reset_if_needed(user)
-    count = user.get("ai_usage_count", 0) if isinstance(user, dict) else getattr(user, "ai_usage_count", 0)
+
+    now = datetime.utcnow()
+
+    cooldown_until = (
+        user.get("ai_cooldown_until")
+        if isinstance(user, dict)
+        else getattr(user, "ai_cooldown_until", None)
+    )
+
+    cooldown_until = _parse_datetime(cooldown_until)
+
+    if cooldown_until and now < cooldown_until:
+        return False
+
+    count = (
+        user.get("ai_usage_count", 0)
+        if isinstance(user, dict)
+        else getattr(user, "ai_usage_count", 0)
+    )
+
     return count < AI_LIMIT
+
+
 
 
 def increment_ai_usage(user):
     now = datetime.utcnow()
-    user_id = user.get("id") if isinstance(user, dict) else getattr(user, "id", None)
+
+    user_id = (
+        user.get("id")
+        if isinstance(user, dict)
+        else getattr(user, "id", None)
+    )
+
+    count = (
+        user.get("ai_usage_count", 0)
+        if isinstance(user, dict)
+        else getattr(user, "ai_usage_count", 0)
+    )
+
+    new_count = count + 1
+
+    updates = {
+        "ai_usage_count": new_count,
+        "last_reset": now,
+        "ai_cooldown_until": (
+            now + timedelta(hours=AI_COOLDOWN_HOURS)
+            if new_count >= AI_LIMIT
+            else None
+        ),
+    }
 
     if isinstance(user, dict):
-        new_count = user.get("ai_usage_count", 0) + 1
-        user["ai_usage_count"] = new_count
-        user["last_reset"] = now
+        user.update(updates)
     else:
-        new_count = getattr(user, "ai_usage_count", 0) + 1
-        user.ai_usage_count = new_count
-        user.last_reset = now
+        user.ai_usage_count = updates["ai_usage_count"]
+        user.last_reset = updates["last_reset"]
+        user.ai_cooldown_until = updates["ai_cooldown_until"]
 
-    if user_id:
+    if user_id is not None:
         database["users"].update_one(
             {"id": user_id},
-            {"$set": {"ai_usage_count": new_count, "last_reset": now}}
+            {"$set": updates},
         )
+
+        
