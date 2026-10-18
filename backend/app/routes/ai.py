@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.database.mongodb import database, get_next_id
 from app.services.gemini_service import (generate_task_breakdown_with_retry,generate_project_summary)
-from app.utils.ai_limit import check_ai_limit, increment_ai_usage
+from app.utils.ai_limit import check_ai_limit, increment_ai_usage, reset_if_needed
 from app.utils.dependencies import get_current_user
 
 router = APIRouter(prefix="/ai", tags=["AI"])
@@ -205,4 +205,28 @@ def get_project_summary(
             "pending_tasks": pending_tasks,
             "percentage": project_data["progress_percentage"]
         }
+    }
+
+
+# --------- AI USAGE STATUS ---------
+@router.get("/usage")
+def get_ai_usage(user=Depends(get_current_user)):
+    db_user = database["users"].find_one({
+        "id": user["user_id"]
+    })
+
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Reset usage if the cooldown has expired
+    reset_if_needed(db_user)
+
+    usage_count = db_user.get("ai_usage_count", 0)
+    remaining = max(0, 20 - usage_count)
+
+    return {
+        "used": usage_count,
+        "remaining": remaining,
+        "limit": 20,
+        "cooldown_until": db_user.get("ai_cooldown_until")
     }
