@@ -44,6 +44,13 @@ def generate_and_save_tasks(
     if not db_user:
         return {"error": "User not found"}
 
+    print(
+    "AI DEBUG:",
+    "user_id =", db_user.get("id"),
+    "usage =", db_user.get("ai_usage_count", 0),
+    "cooldown =", db_user.get("ai_cooldown_until")
+    )
+
     # AI LIMIT CHECK
     if not check_ai_limit(db_user):
         raise HTTPException(status_code=429, detail="AI limit exceeded")
