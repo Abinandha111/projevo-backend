@@ -86,7 +86,28 @@ def generate_and_save_tasks(
             "saved_tasks": []
         }
 
-    # SAVE CACHE
+    # GET OLD AI-GENERATED TASK TITLES
+    old_ai_tasks = project.get("ai_tasks", "")
+    old_ai_data = safe_parse_ai(old_ai_tasks) if old_ai_tasks else None
+
+    old_ai_titles = set()
+
+    if old_ai_data and "epics" in old_ai_data:
+        for epic in old_ai_data.get("epics", []):
+            epic_name = epic.get("name", "General")
+
+            for task in epic.get("tasks", []):
+                old_ai_titles.add(f"[{epic_name}] {task}")
+
+    # DELETE OLD AI TASKS ONLY
+    for old_title in old_ai_titles:
+        database["tasks"].delete_one({
+            "project_id": project_id,
+            "title": old_title,
+            "source": {"$ne": "manual"}
+        })
+
+    # SAVE NEW AI RESPONSE
     database["projects"].update_one(
         {"id": project_id},
         {"$set": {"ai_tasks": ai_tasks}}
@@ -126,7 +147,8 @@ def generate_and_save_tasks(
                     "status": "pending",
                     "epic_order": epic_index,
                     "assigned_to": None,
-                    "due_date": None
+                    "due_date": None,
+                    "source": "ai"
                 }
                 database["tasks"].insert_one(new_task)
                 saved_tasks.append(clean_task)
@@ -177,6 +199,8 @@ def get_project_summary(
         if task.get("status") == "completed"
     )
     pending_tasks = total_tasks - completed_tasks
+
+    
 
     project_data = {
         "project_title":project.get("title", ""),

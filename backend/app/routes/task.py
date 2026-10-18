@@ -129,7 +129,8 @@ def create_task(
         "status": "pending",
         "project_id": task.project_id,
         "assigned_to": None,
-        "due_date": str(task.due_date) if task.due_date else None
+        "due_date": str(task.due_date) if task.due_date else None,
+        "source": "manual"
     }
 
     database["tasks"].insert_one(new_task)
