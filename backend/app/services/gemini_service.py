@@ -182,6 +182,37 @@ Return ONLY JSON:
         print("⚠️ Gemini error:", e)
         return None
 
+def generate_project_summary(project_data:dict):
+    prompt=f"""
+        you are an AI project progress analyst for NexTask.
+
+        Analyze the following project information and write a concise,
+        easy-to-understand project progress summary.
+
+        Project information:
+        {json.dumps(project_data, indent=2, default=str)}
+
+        Instructions:
+        - Summarize overall project progress.
+        - Mention completed and pending tasks.
+        - Highlight overdue tasks if any.
+        - Suggest the next priority.
+        - Use only the information provided.
+        - Do not invent task details or progress.
+        - Return a professional summary in plain text, not JSON.
+    """
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+
+        return response.text.rstrip() if response.text else None
+    except Exception as e :
+        print("gemini project summary error",e)
+        return None
+
 
 # 🔥 RETRY SYSTEM
 def generate_task_breakdown_with_retry(project_name, retries=2):

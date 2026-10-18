@@ -2,7 +2,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.database.mongodb import database, get_next_id
-from app.services.gemini_service import generate_task_breakdown_with_retry
+from app.services.gemini_service import (generate_task_breakdown_with_retry,generate_project_summary)
 from app.utils.ai_limit import check_ai_limit, increment_ai_usage
 from app.utils.dependencies import get_current_user
 
@@ -132,4 +132,77 @@ def generate_and_save_tasks(
     return {
         "message": "AI generated + cached successfully",
         "saved_tasks": ai_tasks
+    }
+
+# ---------PROJECT SUMMARY ---------
+@router.get("/project-summary/{project_id}")
+def get_project_summary(
+    project_id:int,
+    user=Depends(get_current_user)
+):
+    # 1. Check whether the project exists
+    project = database["projects"].find_one({
+        "id":project_id
+    })
+
+    if not project:
+        raise HTTPException(status_code=404,detail="project not found")
+
+    # 2. Check whether the user is a project member
+    member = database["project_members"].find_one({
+        "project_id":project_id,
+        "user_id":user["user_id"]
+    })
+
+    if not member:
+        raise HTTPException(status_code=403,detail="you are not a member of this project ")
+
+    # 3. fetch the projects actual tasks
+    tasks = list(database["tasks"].find(
+        {"project_id":project_id},
+        {
+            
+            "title":1,
+            "status":1,
+            "due_date":1
+        }
+    ))
+
+    # 4. Prepare project progress information 
+    total_tasks = len(tasks)
+    completed_tasks = sum(
+        1 for task in tasks
+        if task.get("status") == "completed"
+    )
+    pending_tasks = total_tasks - completed_tasks
+
+    project_data = {
+        "project_title":project.get("title", ""),
+        "project_description":project.get("description" ""),
+        "project_deadline": project.get("deadline"),
+        "total_tasks": total_tasks,
+        "completed_tasks": completed_tasks,
+        "pending_tasks": pending_tasks,
+        "progress_percentage": round(
+            completed_tasks / total_tasks * 100,1
+        ) if total_tasks else 0,
+        "tasks":tasks
+    }
+
+    # 5. Generate the AI summary
+    summary = generate_project_summary(project_data)
+
+    if not summary:
+        raise HTTPException(status_code=503,detail="Ai summary is temporarily unavailable")
+
+    return {
+        "project_id": project_id,
+        "project_title": project.get("title", ""),
+        "summary": summary,
+         "progress": {
+            "total_tasks": total_tasks,
+            "completed_tasks": completed_tasks,
+            "pending_tasks": pending_tasks,
+            "percentage": project_data["progress_percentage"]
+        }
     }
