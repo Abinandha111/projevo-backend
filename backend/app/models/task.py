@@ -7,7 +7,9 @@ class Task:
         status="pending",
         project_id=None,
         assigned_to=None,
-        due_date=None
+        due_date=None,
+        description=None,
+        labels=None
     ):
         self.id = id
         self.title = title
@@ -16,6 +18,8 @@ class Task:
         self.project_id = project_id
         self.assigned_to = assigned_to
         self.due_date = due_date
+        self.description = description
+        self.labels = labels or []
 
     def to_dict(self):
         return {
@@ -25,5 +29,7 @@ class Task:
             "status": self.status,
             "project_id": self.project_id,
             "assigned_to": self.assigned_to,
-            "due_date": self.due_date
+            "due_date": self.due_date,
+            "description": self.description,
+            "labels": self.labels
         }

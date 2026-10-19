@@ -242,3 +242,90 @@ def generate_task_breakdown_with_retry(project_name, retries=2):
     print("❌ Gemini and Groq failed")
 
     return None
+
+
+# Generate tasks for one selected Epic
+def generate_epic_tasks_with_retry(project_name, epic_name, requirements, retries=2):
+    prompt = f"""
+You are a senior software project planner for NexTask.
+
+Project name:
+{project_name}
+
+Selected Epic:
+{epic_name}
+
+User requirements:
+{requirements}
+
+Your task:
+- Generate tasks ONLY for the selected Epic.
+- Follow the user's requirements carefully.
+- Do not generate tasks for other Epics.
+- If the user asks to keep existing tasks and add new ones, generate only the additional tasks requested.
+- Make the tasks clear, practical, and non-duplicative.
+- Return valid JSON only, without Markdown code fences.
+
+Required JSON format:
+{{
+    "epic_name": "{epic_name}",
+    "tasks": [
+        "First task",
+        "Second task"
+    ]
+}}
+"""
+
+    # Try Gemini first
+    for attempt in range(retries):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+
+            cleaned = clean_ai_response(response.text)
+
+            if cleaned:
+                # Validate that the response is valid JSON
+                result = json.loads(cleaned)
+
+                if isinstance(result, dict) and isinstance(result.get("tasks"), list):
+                    normalized_tasks = []
+                    for task in result["tasks"]:
+                        if isinstance(task, str) and task.strip():
+                            normalized_tasks.append(task.strip())
+                        elif isinstance(task, dict) and task.get("title"):
+                            normalized_tasks.append(str(task["title"]).strip())
+                    if normalized_tasks:
+                        return {"epic_name": epic_name, "tasks": normalized_tasks}
+
+        except Exception as e:
+            print(f"Gemini Epic generation attempt {attempt + 1} failed:", e)
+            time.sleep(1)
+
+    # Gemini failed: try Groq fallback
+    try:
+        response = groq_client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2
+        )
+
+        cleaned = clean_ai_response(response.choices[0].message.content)
+        result = json.loads(cleaned)
+
+        if isinstance(result, dict) and isinstance(result.get("tasks"), list):
+            normalized_tasks = []
+            for task in result["tasks"]:
+                if isinstance(task, str) and task.strip():
+                    normalized_tasks.append(task.strip())
+                elif isinstance(task, dict) and task.get("title"):
+                    normalized_tasks.append(str(task["title"]).strip())
+            if normalized_tasks:
+                return {"epic_name": epic_name, "tasks": normalized_tasks}
+
+    except Exception as e:
+        print("Groq Epic generation fallback failed:", e)
+
+    return None

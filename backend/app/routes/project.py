@@ -105,6 +105,7 @@ def get_projects(current_user=Depends(get_current_user)):
             "user_id": project.get("user_id"),
             "invite_code": project.get("invite_code"),
             "deadline": project.get("deadline"),
+            "ai_tasks": project.get("ai_tasks"),
             "role": role_map.get(p_id, "member"),
             "member_count": member_count,
             "total_tasks": total_tasks,

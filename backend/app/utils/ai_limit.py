@@ -137,16 +137,22 @@ def increment_ai_usage(user):
         else getattr(user, "id", None)
     )
 
-    count = (
-        user.get("ai_usage_count", 0)
-        if isinstance(user, dict)
-        else getattr(user, "ai_usage_count", 0)
+    if user_id is None:
+        return
+
+    # Atomically increment the usage count in MongoDB
+    result = database["users"].update_one(
+        {"id": user_id},
+        {"$inc": {"ai_usage_count": 1}}
     )
 
-    new_count = count + 1
+    if result.matched_count == 0:
+        return
+
+    updated_user = database["users"].find_one({"id": user_id})
+    new_count = updated_user.get("ai_usage_count", 0)
 
     updates = {
-        "ai_usage_count": new_count,
         "last_reset": now,
         "ai_cooldown_until": (
             now + timedelta(hours=AI_COOLDOWN_HOURS)
@@ -155,17 +161,16 @@ def increment_ai_usage(user):
         ),
     }
 
-    if isinstance(user, dict):
-        user.update(updates)
-    else:
-        user.ai_usage_count = updates["ai_usage_count"]
-        user.last_reset = updates["last_reset"]
-        user.ai_cooldown_until = updates["ai_cooldown_until"]
+    database["users"].update_one(
+        {"id": user_id},
+        {"$set": updates}
+    )
 
-    if user_id is not None:
-        database["users"].update_one(
-            {"id": user_id},
-            {"$set": updates},
-        )
+    if isinstance(user, dict):
+        user.update({
+            "ai_usage_count": new_count,
+            **updates
+        })
+
 
         

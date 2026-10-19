@@ -2,6 +2,16 @@
 import os
 
 from dotenv import load_dotenv
+
+try:
+    import dns.resolver
+    dns.resolver.default_resolver = dns.resolver.Resolver(configure=True)
+    dns.resolver.default_resolver.nameservers = ["8.8.8.8", "1.1.1.1"] + [
+        ns for ns in dns.resolver.default_resolver.nameservers if ns not in ["8.8.8.8", "1.1.1.1"]
+    ]
+except Exception:
+    pass
+
 from pymongo import MongoClient, ReturnDocument
 
 load_dotenv()
