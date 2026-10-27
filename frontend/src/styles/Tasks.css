@@ -1,5 +1,6 @@
 .epic-card {
-  background: white;
+  background: var(--bg-hover);
+  color: var(--text-main);
   padding: 20px;
   margin-top: 20px;
   border-radius: 10px;
