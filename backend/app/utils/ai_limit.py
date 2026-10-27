@@ -1,54 +1,35 @@
+
 from datetime import datetime, timedelta
-from app.database.mongodb import database
+from app.database.mongodb import database, ReturnDocument
 
-AI_LIMIT = 20  # cumulative uses per user before cooldown
-
+AI_LIMIT = 20
 AI_COOLDOWN_HOURS = 8
 
 
 def _parse_datetime(val):
-    if not val:
-        return None
     if isinstance(val, datetime):
         return val
+
     if isinstance(val, str):
-        for fmt in (
-            "%Y-%m-%d %H:%M:%S.%f",
-            "%Y-%m-%d %H:%M:%S",
-            "%Y-%m-%dT%H:%M:%S.%f",
-            "%Y-%m-%dT%H:%M:%S",
-        ):
-            try:
-                return datetime.strptime(val, fmt)
-            except ValueError:
-                continue
+        try:
+            return datetime.fromisoformat(val)
+        except ValueError:
+            return None
+
     return None
 
 
-
-
 def reset_if_needed(user):
-    now = datetime.utcnow()
+    user_id = user.get("id")
 
-    user_id = (
-        user.get("id")
-        if isinstance(user, dict)
-        else getattr(user, "id", None)
-    )
-
-    raw_cooldown = (
-        user.get("ai_cooldown_until")
-        if isinstance(user, dict)
-        else getattr(user, "ai_cooldown_until", None)
-    )
-
-    cooldown_until = _parse_datetime(raw_cooldown)
-
-    # Cooldown is still active
-    if cooldown_until and now < cooldown_until:
+    if user_id is None:
         return user
 
-    # Cooldown finished: restore a fresh set of 20 uses
+    now = datetime.utcnow()
+    cooldown_until = _parse_datetime(
+        user.get("ai_cooldown_until")
+    )
+
     if cooldown_until and now >= cooldown_until:
         updates = {
             "ai_usage_count": 0,
@@ -56,121 +37,70 @@ def reset_if_needed(user):
             "last_reset": now,
         }
 
-        if isinstance(user, dict):
-            user.update(updates)
-        else:
-            user.ai_usage_count = 0
-            user.ai_cooldown_until = None
-            user.last_reset = now
-
-        if user_id is not None:
-            database["users"].update_one(
-                {"id": user_id},
-                {"$set": updates},
-            )
+        database["users"].update_one(
+            {"id": user_id, "ai_cooldown_until": {"$ne": None}},
+            {"$set": updates},
+        )
+        user.update(updates)
 
     return user
 
 
-
-def check_ai_limit(user):
-    user = reset_if_needed(user)
-
-    user_id = (
-        user.get("id")
-        if isinstance(user, dict)
-        else getattr(user, "id", None)
-    )
-
-    count = (
-        user.get("ai_usage_count", 0)
-        if isinstance(user, dict)
-        else getattr(user, "ai_usage_count", 0)
-    )
-
-    cooldown_until = _parse_datetime(
-        user.get("ai_cooldown_until")
-        if isinstance(user, dict)
-        else getattr(user, "ai_cooldown_until", None)
-    )
-
+def reserve_ai_usage(user_id: int) -> bool:
+    """
+    Atomically reserve one AI use.
+    Returns False if the limit or cooldown blocks the request.
+    """
     now = datetime.utcnow()
+    cooldown_end = now + timedelta(hours=AI_COOLDOWN_HOURS)
 
-    # If fewer than 20 uses, clear any stale cooldown
-    if count < AI_LIMIT:
-        if cooldown_until is not None:
-            if isinstance(user, dict):
-                user["ai_cooldown_until"] = None
-            else:
-                user.ai_cooldown_until = None
+    # Reset the count only when a stored cooldown has expired.
+    database["users"].update_one(
+        {
+            "id": user_id,
+            "ai_cooldown_until": {"$ne": None, "$lte": now},
+        },
+        {
+            "$set": {
+                "ai_usage_count": 0,
+                "ai_cooldown_until": None,
+                "last_reset": now,
+            }
+        },
+    )
 
-            if user_id is not None:
-                database["users"].update_one(
-                    {"id": user_id},
-                    {"$set": {"ai_cooldown_until": None}}
-                )
+    # Atomically allow one use only if fewer than 20 uses remain
+    # and no active cooldown exists.
+    updated_user = database["users"].find_one_and_update(
+        {
+            "id": user_id,
+            "ai_usage_count": {"$lt": AI_LIMIT},
+            "$or": [
+                {"ai_cooldown_until": None},
+                {"ai_cooldown_until": {"$exists": False}},
+            ],
+        },
+        {
+            "$inc": {"ai_usage_count": 1},
+        },
+        return_document=ReturnDocument.AFTER,
+    )
 
-        return True
-
-    # If 20 uses reached and cooldown is active, block usage
-    if cooldown_until and now < cooldown_until:
+    if updated_user is None:
         return False
 
-    # Cooldown expired; reset usage and allow generation
-    if cooldown_until and now >= cooldown_until:
-        reset_if_needed(user)
-        return True
+    # Start the cooldown when the 20th use is reserved.
+    if updated_user.get("ai_usage_count", 0) >= AI_LIMIT:
+        database["users"].update_one(
+            {
+                "id": user_id,
+                "ai_usage_count": {"$gte": AI_LIMIT},
+                "$or": [
+                    {"ai_cooldown_until": None},
+                    {"ai_cooldown_until": {"$exists": False}},
+                ],
+            },
+            {"$set": {"ai_cooldown_until": cooldown_end}},
+        )
 
-    # Safety fallback for count at/above limit
-    return False
-
-
-
-
-
-def increment_ai_usage(user):
-    now = datetime.utcnow()
-
-    user_id = (
-        user.get("id")
-        if isinstance(user, dict)
-        else getattr(user, "id", None)
-    )
-
-    if user_id is None:
-        return
-
-    # Atomically increment the usage count in MongoDB
-    result = database["users"].update_one(
-        {"id": user_id},
-        {"$inc": {"ai_usage_count": 1}}
-    )
-
-    if result.matched_count == 0:
-        return
-
-    updated_user = database["users"].find_one({"id": user_id})
-    new_count = updated_user.get("ai_usage_count", 0)
-
-    updates = {
-        "last_reset": now,
-        "ai_cooldown_until": (
-            now + timedelta(hours=AI_COOLDOWN_HOURS)
-            if new_count >= AI_LIMIT
-            else None
-        ),
-    }
-
-    database["users"].update_one(
-        {"id": user_id},
-        {"$set": updates}
-    )
-
-    if isinstance(user, dict):
-        user.update({
-            "ai_usage_count": new_count,
-            **updates
-        })
-
-
-        
+    return True

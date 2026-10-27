@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.database.mongodb import database, get_next_id
 from app.services.gemini_service import (generate_task_breakdown_with_retry,generate_project_summary,generate_epic_tasks_with_retry)
-from app.utils.ai_limit import check_ai_limit, increment_ai_usage, reset_if_needed
+from app.utils.ai_limit import reserve_ai_usage, reset_if_needed
 from app.utils.dependencies import get_current_user
 
 router = APIRouter(prefix="/ai", tags=["AI"])
@@ -20,21 +20,6 @@ def safe_parse_ai(ai_text: str):
         return None
 
 
-# ---------------- BREAKDOWN ----------------
-@router.get("/breakdown")
-def ai_breakdown(project_name: str):
-    ai_tasks = generate_task_breakdown_with_retry(project_name)
-
-    if ai_tasks is None:
-        return {
-            "message": "AI service temporarily unavailable",
-            "ai_tasks": []
-        }
-
-    return {
-        "project": project_name,
-        "ai_tasks": ai_tasks
-    }
 
 
 # ---------------- MAIN ----------------
@@ -50,10 +35,7 @@ def generate_and_save_tasks(
 
     
 
-    # AI LIMIT CHECK
-    if not check_ai_limit(db_user):
-        raise HTTPException(status_code=429, detail="AI limit exceeded")
-
+   
     project = database["projects"].find_one({"id": project_id})
 
     if not project:
@@ -67,6 +49,13 @@ def generate_and_save_tasks(
 
     if not leader:
         raise HTTPException(status_code=403, detail="Only the project leader can generate AI tasks")
+
+    # Atomically reserve one AI use
+    if not reserve_ai_usage(user["user_id"]):
+        raise HTTPException(
+            status_code=429,
+            detail="AI limit exceeded. Please try again after the cooldown."
+        )
 
     # GEMINI CALL
     ai_tasks = generate_task_breakdown_with_retry(project.get("title", ""))
@@ -97,12 +86,6 @@ def generate_and_save_tasks(
         {"id": project_id},
         {"$set": {"ai_tasks": ai_tasks}}
     )
-
-    # INCREMENT USAGE
-    increment_ai_usage(db_user)
-
-    
-
            
     
 
@@ -185,8 +168,7 @@ def generate_epic_tasks(
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if not check_ai_limit(db_user):
-        raise HTTPException(status_code=429, detail="AI limit exceeded")
+    
 
     project = database["projects"].find_one({
         "id": request.project_id
@@ -207,6 +189,8 @@ def generate_epic_tasks(
             detail="Only the project leader can generate Epic tasks"
         )
 
+    
+
     epic_name_clean = request.epic_name.strip()
     requirements_clean = request.requirements.strip()
 
@@ -215,6 +199,13 @@ def generate_epic_tasks(
             status_code=400,
             detail="Epic name and requirements are required"
         )
+
+
+    if not reserve_ai_usage(user["user_id"]):
+            raise HTTPException(
+                status_code=429,
+                detail="AI limit exceeded. Please try again after the cooldown."
+            )
 
     project_title = project.get("title", "")
     project_desc = project.get("description", "")
@@ -232,7 +223,7 @@ def generate_epic_tasks(
             detail="AI task generation failed. Existing tasks were not changed."
         )
 
-    increment_ai_usage(db_user)
+   
 
     return {
         "message": "Epic tasks generated. Review before saving.",
@@ -515,6 +506,13 @@ def get_project_summary(
         ) if total_tasks else 0,
         "tasks":tasks
     }
+
+        # Check AI usage limit
+    if not reserve_ai_usage(user["user_id"]):
+        raise HTTPException(
+            status_code=429,
+            detail="AI limit exceeded. Please try again after the cooldown."
+        )
 
     # 5. Generate the AI summary
     summary = generate_project_summary(project_data)

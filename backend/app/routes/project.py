@@ -5,6 +5,15 @@ from app.database.mongodb import database, get_next_id, serialize_doc
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.gemini_service import validate_project_idea
 from app.utils.dependencies import get_current_user
+from app.models.Project_Member import ProjectMember
+
+import os
+
+UPLOAD_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "uploads",
+    "attachments"
+)
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -36,7 +45,7 @@ def create_project(
         "description": project.description,
         "user_id": current_user["user_id"],
         "invite_code": invite_code,
-        "deadline": project.deadline,
+        "deadline": project.deadline.isoformat() if project.deadline else None,
         "ai_tasks": None
     }
     database["projects"].insert_one(new_project)
@@ -167,9 +176,55 @@ def delete_project(
             detail="Project not found"
         )
 
-    database["tasks"].delete_many({"project_id": project_id})
-    database["project_members"].delete_many({"project_id": project_id})
-    database["activities"].delete_many({"project_id": project_id})
-    database["projects"].delete_one({"id": project_id})
+    # Get all task IDs belonging to this project
+    task_ids = [
+        task["id"]
+        for task in database["tasks"].find(
+            {"project_id": project_id},
+            {"id": 1}
+        )
+    ]
+
+    # Delete uploaded attachment files from disk
+    attachments = list(
+        database["task_attachments"].find(
+            {"project_id": project_id}
+        )
+    )
+
+    for attachment in attachments:
+        file_path = attachment.get("file_path")
+
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Could not delete an attachment file. Project was not deleted."
+                ) from exc
+
+    # Delete project-related database records
+    database["task_attachments"].delete_many(
+        {"project_id": project_id}
+    )
+    database["task_comments"].delete_many(
+        {"project_id": project_id}
+    )
+    database["notifications"].delete_many(
+        {"project_id": project_id}
+    )
+    database["tasks"].delete_many(
+        {"project_id": project_id}
+    )
+    database["project_members"].delete_many(
+        {"project_id": project_id}
+    )
+    database["activities"].delete_many(
+        {"project_id": project_id}
+    )
+    database["projects"].delete_one(
+        {"id": project_id}
+    )
 
     return {"message": "Project deleted successfully"}

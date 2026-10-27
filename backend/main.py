@@ -6,6 +6,11 @@ from app.database.mongodb import check_mongodb_connection
 
 from app.services.deadline_schedular import (start_deadline_scheduler,scheduler)
 
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+
 import app.models.user
 import app.models.project
 import app.models.task
@@ -14,6 +19,15 @@ import app.models.activity
 
 # ✅ FIRST create app
 app = FastAPI()
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"Unexpected error: {exc}")
+
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"}
+    )
 
 # ✅ THEN CORS
 origins = [

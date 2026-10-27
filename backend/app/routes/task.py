@@ -101,6 +101,7 @@ def assign_task(
     activity = {
         "id": activity_id,
         "project_id": task["project_id"],
+        "task_id": task_id,
         "user_id": current_user["user_id"],
         "activity_type": "task_assigned",
         "message": f"{leader_name} assigned {task['title']} to {assigned_name}"
@@ -268,6 +269,7 @@ def update_task_status(
         activity = {
             "id": activity_id,
             "project_id": task["project_id"],
+            "task_id": task_id,
             "user_id": current_user["user_id"],
             "activity_type": "task_completed",
             "message": f'{user_name} completed "{task.get("title", "")}"'
@@ -475,9 +477,7 @@ def add_task_comment(
     data: CommentCreate,
     current_user=Depends(get_current_user)
 ):
-    clean_content = data.content.strip()
-    if not clean_content:
-        raise HTTPException(status_code=400, detail="Comment cannot be empty")
+    
 
     task = database["tasks"].find_one({"id": task_id})
     if not task:
@@ -490,8 +490,19 @@ def add_task_comment(
     if not member:
         raise HTTPException(status_code=403, detail="You are not authorized to comment on this task")
 
+
+    clean_content = data.content.strip()
+
+    if not clean_content:
+        raise HTTPException(
+            status_code=400,
+            detail="Comment cannot be empty"
+        )
+
     user = database["users"].find_one({"id": current_user["user_id"]})
     user_name = user.get("name", "User") if user else "User"
+
+
 
     comment_id = get_next_id("task_comments")
     now_iso = datetime.now().isoformat()
@@ -513,6 +524,7 @@ def add_task_comment(
     activity = {
         "id": activity_id,
         "project_id": task["project_id"],
+        "task_id": task_id,
         "user_id": current_user["user_id"],
         "activity_type": "task_comment",
         "message": f'{user_name} commented on "{task.get("title", "Task")}"'
@@ -732,18 +744,36 @@ def delete_task(
     })
 
     if not leader:
-        raise HTTPException(status_code=403, detail="Only the project leader can delete tasks")
+        raise HTTPException(
+            status_code=403,
+            detail="Only the project leader can delete tasks"
+        )
 
-    # Delete attachments from disk and database
-    attachments = list(database["task_attachments"].find({"task_id": task_id}))
-    for att in attachments:
-        try:
-            if att.get("file_path") and os.path.exists(att["file_path"]):
-                os.remove(att["file_path"])
-        except Exception:
-            pass
+    # Delete attachment files from disk
+    attachments = list(
+        database["task_attachments"].find({"task_id": task_id})
+    )
+
+    for attachment in attachments:
+        file_path = attachment.get("file_path")
+
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Could not delete an attachment file. Task was not deleted."
+                ) from exc
+
+    # Delete related database records
     database["task_attachments"].delete_many({"task_id": task_id})
-
-    database["tasks"].delete_one({"id": task_id})
     database["task_comments"].delete_many({"task_id": task_id})
+    database["activities"].delete_many({"task_id": task_id})
+    database["notifications"].delete_many({"task_id": task_id})
+
+    # Existing activity records cannot reliably be linked to this task
+    # because they currently do not store task_id.
+    database["tasks"].delete_one({"id": task_id})
+
     return {"message": "Task deleted successfully"}
