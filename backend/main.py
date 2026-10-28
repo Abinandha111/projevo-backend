@@ -33,7 +33,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://projevo-frontend.vercel.app"
+    "https://projevo-frontend.vercel.app",
+    "https://nextask-frontend-nine.vercel.app"
 ]
 
 app.add_middleware(
