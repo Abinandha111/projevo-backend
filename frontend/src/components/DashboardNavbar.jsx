@@ -101,7 +101,8 @@ function DashboardNavbar({ onOpenMobile }) {
       }}
     >
       {/* Left: Mobile hamburger & Project Switcher */}
-      <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+      <div className="navbar-left" 
+        style={{ display: "flex", alignItems: "center", gap: "16px", minWidth: 0  }}>
         {/* Mobile menu button */}
         <button
           onClick={onOpenMobile}
@@ -275,7 +276,8 @@ function DashboardNavbar({ onOpenMobile }) {
       </div>
 
       {/* Right: Quick Action & TOP-RIGHT USER PROFILE AREA */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+      <div className="navbar-right"
+          style={{ display: "flex", alignItems: "center", gap: "12px",flexShrink: 0 }}>
         <Link
           to="/projects"
           className="btn btn-sm btn-secondary"

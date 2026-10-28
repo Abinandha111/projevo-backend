@@ -61,9 +61,10 @@ function Sidebar({ mobileOpen, onCloseMobile }) {
           display: "flex",
           flexDirection: "column",
           height: "100vh",
-          position: "sticky",
+          position: "fixed",
           top: 0,
           zIndex: 50,
+          left:0,
           transition: "transform 0.3s ease",
           ...(mobileOpen
             ? {

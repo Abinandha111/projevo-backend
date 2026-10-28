@@ -244,7 +244,18 @@ function Kanban() {
                 </div>
 
                 {/* Cards List */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1 }}>
+                <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                        flex: 1,
+                        minHeight: 0,
+                        maxHeight: "calc(100vh - 280px)",
+                        overflowY: "auto",
+                        paddingRight: "6px"
+                      }}
+                    >
                   {colTasks.length === 0 ? (
                     <div
                       style={{
