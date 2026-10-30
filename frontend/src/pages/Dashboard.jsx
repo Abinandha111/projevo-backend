@@ -32,7 +32,7 @@ import {
 
 function Dashboard() {
   const navigate = useNavigate();
-  const { projects, setSelectedProjectId, refreshProjects } = useProject();
+  const { projects, selectedProjectId, setSelectedProjectId, refreshProjects } = useProject();
 
   const [stats, setStats] = useState({
     total_projects: 0,
@@ -54,7 +54,11 @@ function Dashboard() {
       setLoading(true);
       setError("");
 
-      const res = await API.get("/dashboard/stats");
+      const res = await API.get("/dashboard/stats", {
+          params: {
+            project_id: selectedProjectId
+          }
+        });
       setStats({
         total_projects: res.data?.total_projects ?? 0,
         total_tasks: res.data?.total_tasks ?? 0,
@@ -77,8 +81,10 @@ function Dashboard() {
   };
 
   useEffect(() => {
+  if (selectedProjectId) {
     fetchStats();
-  }, []);
+  }
+}, [selectedProjectId]);
 
   const fetchActivities = async () => {
   try {
