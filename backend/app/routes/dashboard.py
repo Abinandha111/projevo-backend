@@ -10,80 +10,67 @@ router = APIRouter(
 
 
 @router.get("/stats")
-def get_dashboard_stats(current_user=Depends(get_current_user)):
-    memberships = list(
-        database["project_members"].find({"user_id": current_user["user_id"]})
+def get_dashboard_stats(
+    project_id: str,
+    current_user=Depends(get_current_user)
+):
+    # Check whether the current user belongs to this project
+    membership = database["project_members"].find_one({
+        "user_id": current_user["user_id"],
+        "project_id": project_id
+    })
+
+    if not membership:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=403,
+            detail="You are not a member of this project"
+        )
+
+    role = membership.get("role", "member")
+
+    # Fetch selected project tasks only
+    if role == "leader":
+        tasks = list(
+            database["tasks"].find({"project_id": project_id})
+        )
+    else:
+        tasks = list(
+            database["tasks"].find({
+                "project_id": project_id,
+                "assigned_to": current_user["user_id"]
+            })
+        )
+
+    total_tasks = len(tasks)
+
+    completed_tasks = sum(
+        1 for t in tasks if t.get("status") == "completed"
     )
 
-    project_ids = [m["project_id"] for m in memberships]
-    projects = (
-        list(database["projects"].find({"id": {"$in": project_ids}}))
-        if project_ids
-        else []
-    )
-    project_map = {p["id"]: p for p in projects}
-
-    all_visible_tasks = []
-    recent_projects = []
-
-    for m in memberships:
-        p = project_map.get(m["project_id"])
-        if not p:
-            continue
-
-        p_id = p["id"]
-        role = m.get("role", "member")
-
-        if role == "leader":
-            proj_tasks = list(database["tasks"].find({"project_id": p_id}))
-        else:
-            proj_tasks = list(
-                database["tasks"].find({
-                    "project_id": p_id,
-                    "assigned_to": current_user["user_id"]
-                })
-            )
-
-        all_visible_tasks.extend(proj_tasks)
-
-        p_completed = len([t for t in proj_tasks if t.get("status") == "completed"])
-        p_total = len(proj_tasks)
-        p_progress = round((p_completed / p_total) * 100, 1) if p_total > 0 else 0
-
-        recent_projects.append({
-            "id": p_id,
-            "title": p.get("title", ""),
-            "description": p.get("description"),
-            "deadline": p.get("deadline"),
-            "role": role,
-            "total_tasks": p_total,
-            "completed_tasks": p_completed,
-            "progress": p_progress
-        })
-
-    total_projects = len(projects)
-    total_tasks = len(all_visible_tasks)
-
-    completed_tasks = len(
-        [t for t in all_visible_tasks if t.get("status") == "completed"]
-    )
-    in_progress_tasks = len(
-        [t for t in all_visible_tasks if t.get("status") == "in_progress"]
-    )
-    pending_tasks = len(
-        [t for t in all_visible_tasks if t.get("status") == "pending"]
+    in_progress_tasks = sum(
+        1 for t in tasks if t.get("status") == "in_progress"
     )
 
-    progress = 0
-    if total_tasks > 0:
-        progress = round((completed_tasks / total_tasks) * 100, 1)
+    pending_tasks = sum(
+        1 for t in tasks if t.get("status") == "pending"
+    )
+
+    progress = (
+        round((completed_tasks / total_tasks) * 100, 1)
+        if total_tasks > 0 else 0
+    )
 
     return {
-        "total_projects": total_projects,
+         "total_projects": len(
+        list(database["project_members"].find({
+            "user_id": current_user["user_id"]
+        }))
+    ),
         "total_tasks": total_tasks,
         "completed_tasks": completed_tasks,
         "in_progress_tasks": in_progress_tasks,
         "pending_tasks": pending_tasks,
         "progress_percentage": progress,
-        "recent_projects": recent_projects
+        "recent_projects": []
     }
