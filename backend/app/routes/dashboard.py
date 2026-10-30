@@ -11,7 +11,7 @@ router = APIRouter(
 
 @router.get("/stats")
 def get_dashboard_stats(
-    project_id: str,
+    project_id: int,
     current_user=Depends(get_current_user)
 ):
     # Check whether the current user belongs to this project
