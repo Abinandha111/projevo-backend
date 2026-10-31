@@ -7,8 +7,6 @@ import {
   Kanban as KanbanIcon,
   Users,
   Sparkles,
-  Settings as SettingsIcon,
-  LogOut,
   Zap,
   X,
   User
@@ -17,12 +15,9 @@ import { useProject } from "../context/ProjectContext";
 
 function Sidebar({ mobileOpen, onCloseMobile }) {
   const navigate = useNavigate();
-  const { currentUser, logout } = useProject();
+  const { currentUser} = useProject();
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
-  };
+  
 
   const navItems = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -204,79 +199,6 @@ function Sidebar({ mobileOpen, onCloseMobile }) {
                 </NavLink>
               );
             })}
-          </nav>
-
-          {/* Divider */}
-          <div
-            style={{
-              height: "1px",
-              backgroundColor: "var(--border-color)",
-              margin: "14px 6px"
-            }}
-          />
-
-          {/* Settings & Logout */}
-          <nav style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <NavLink
-              to="/settings"
-              onClick={() => onCloseMobile && onCloseMobile()}
-              style={({ isActive }) => ({
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                padding: "10px 12px",
-                borderRadius: "var(--radius-md)",
-                fontSize: "14px",
-                fontWeight: isActive ? 600 : 500,
-                color: isActive ? "var(--primary)" : "var(--text-muted)",
-                backgroundColor: isActive ? "var(--primary-light)" : "transparent",
-                transition: "var(--transition)",
-                textDecoration: "none"
-              })}
-              className="sidebar-link"
-              onMouseEnter={(e) => {
-                const isActive = e.currentTarget.classList.contains("active");
-                if (!isActive) {
-                  e.currentTarget.style.backgroundColor = "var(--bg-subtle)";
-                  e.currentTarget.style.color = "var(--text-main)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                const isActive = e.currentTarget.classList.contains("active");
-                if (!isActive) {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                }
-              }}
-            >
-              <SettingsIcon size={18} />
-              <span>Settings</span>
-            </NavLink>
-
-            <button
-              onClick={handleLogout}
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                padding: "10px 12px",
-                borderRadius: "var(--radius-md)",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: "var(--danger-text)",
-                backgroundColor: "transparent",
-                cursor: "pointer",
-                transition: "var(--transition)",
-                border: "none",
-                textAlign: "left"
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--danger-light)")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-            >
-              <LogOut size={18} color="var(--danger)" />
-              <span>Logout</span>
-            </button>
           </nav>
         </div>
 

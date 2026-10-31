@@ -488,12 +488,26 @@ const handleDeleteTask = async () => {
           )}
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
+        <div
+            className="card"
+            style={{
+              height: "650px",
+              maxHeight: "70vh",
+              overflowY: "auto",
+              padding: "20px 24px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "22px",
+              scrollBehavior: "smooth"
+            }}
+          >
           {Object.entries(groupedTasks).map(([epicName, epicTasks]) => (
             <div
               key={epicName}
               className="card"
-              style={{ padding: "20px 24px" }}
+              style={{ padding: "20px 24px",
+                borderBottom: "1px solid var(--border-color)"
+               }}
             >
               {/* Epic Header */}
               <div
