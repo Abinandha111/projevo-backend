@@ -100,3 +100,55 @@ def join_project(
     return {
         "message": "Joined project successfully"
     }
+
+
+
+@router.delete("/{project_id}/leave")
+def leave_project(
+    project_id: int,
+    current_user=Depends(get_current_user)
+):
+    # Check whether the user is a member of this project
+    membership = database["project_members"].find_one({
+        "project_id": project_id,
+        "user_id": current_user["user_id"]
+    })
+
+    if not membership:
+        raise HTTPException(
+            status_code=404,
+            detail="You are not a member of this project"
+        )
+
+    # Leader cannot leave their own project
+    if membership.get("role") == "leader":
+        raise HTTPException(
+            status_code=403,
+            detail="Project leader cannot leave the project"
+        )
+
+    # Remove only the member's project membership
+    database["project_members"].delete_one({
+        "project_id": project_id,
+        "user_id": current_user["user_id"]
+    })
+
+    # Record the activity
+    user = database["users"].find_one({
+        "id": current_user["user_id"]
+    })
+    user_name = user.get("name", "User") if user else "User"
+
+    activity_id = get_next_id("activities")
+
+    database["activities"].insert_one({
+        "id": activity_id,
+        "project_id": project_id,
+        "user_id": current_user["user_id"],
+        "activity_type": "member_left",
+        "message": f"{user_name} left the project"
+    })
+
+    return {
+        "message": "Left project successfully"
+    }

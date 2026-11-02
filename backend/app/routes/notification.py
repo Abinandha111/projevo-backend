@@ -62,3 +62,23 @@ def mark_notification_as_read(
         "message": "Notification marked as read",
         "notification": serialize_doc(updated_notification)
     }
+
+@router.delete("/{notification_id}")
+def delete_notification(
+    notification_id: int,
+    current_user=Depends(get_current_user)
+):
+    result = database["notifications"].delete_one({
+        "id": notification_id,
+        "user_id": current_user["user_id"]
+    })
+
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Notification not found"
+        )
+
+    return {
+        "message": "Notification deleted successfully"
+    }
