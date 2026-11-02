@@ -116,11 +116,22 @@ useEffect(() => {
   ].filter((item) => item.value > 0);
 
   // Data for Project Comparison Bar Chart
-  const barData = recentProjectsList.slice(0, 5).map((p) => ({
-    name: p.title?.length > 12 ? p.title.substring(0, 10) + "..." : (p.title || "Project"),
-    Completed: p.completed_tasks || 0,
-    Remaining: Math.max(0, (p.total_tasks || 0) - (p.completed_tasks || 0))
-  }));
+  const selectedProject = projects.find(
+  (p) => String(p.id) === String(selectedProjectId)
+);
+
+const barData = selectedProjectId
+  ? [
+      {
+        name: selectedProject?.title || "Selected Project",
+        Completed: stats.completed_tasks,
+        Remaining: Math.max(
+          0,
+          stats.total_tasks - stats.completed_tasks
+        )
+      }
+    ]
+  : [];
 
   const deadlineProjects = recentProjectsList.filter((p) => Boolean(p.deadline));
 
@@ -344,7 +355,7 @@ useEffect(() => {
           {/* Project Progress Comparison */}
           <div className="card" style={{ padding: "24px" }}>
             <h3 style={{ fontSize: "16px", fontWeight: 600, color: "var(--text-main)", marginBottom: "16px" }}>
-              Tasks per Project
+              Tasks Progress
             </h3>
             <div style={{ height: "240px", width: "100%" }}>
               <ResponsiveContainer width="100%" height="100%">

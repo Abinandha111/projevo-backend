@@ -51,6 +51,8 @@ function Projects() {
   });
   const [creating, setCreating] = useState(false);
 
+  const [uploadedFileName, setUploadedFileName] = useState("");
+
   const [inviteCodeInput, setInviteCodeInput] = useState("");
   const [joining, setJoining] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -59,30 +61,87 @@ function Projects() {
     refreshProjects();
   }, [refreshProjects]);
 
-  const handleCreateProject = async (e) => {
-    e.preventDefault();
-    if (!newProject.title.trim()) {
-      showToast("Project title is required", "error");
-      return;
+
+  const handleDescriptionFileUpload = async (e) => {
+  const file = e.target.files[0];
+
+  if (!file) return;
+
+  const allowedExtensions = [".txt", ".md"];
+  const fileExtension = file.name
+    .slice(file.name.lastIndexOf("."))
+    .toLowerCase();
+
+  if (!allowedExtensions.includes(fileExtension)) {
+    showToast("Please upload a .txt or .md file", "error");
+    e.target.value = "";
+    return;
+  }
+
+  try {
+    const text = await file.text();
+
+    setNewProject((prev) => ({
+      ...prev,
+      description: text
+    }));
+
+    setUploadedFileName(file.name);
+    e.target.value = "";
+    showToast("Description file uploaded successfully", "success");
+    
+  } catch (error) {
+    console.error(error);
+    showToast("Failed to read file", "error");
+  }
+};
+
+
+ const handleCreateProject = async (e) => {
+  e.preventDefault();
+
+  if (!newProject.title.trim()) {
+    showToast("Project title is required", "error");
+    return;
+  }
+
+  try {
+    setCreating(true);
+
+    const projectData = {
+  ...newProject,
+  deadline: newProject.deadline || null
+};
+
+const res = await API.post("/projects/", projectData);
+    showToast("Project created successfully! 🚀", "success");
+
+    setNewProject({
+      title: "",
+      description: "",
+      deadline: ""
+    });
+
+    setUploadedFileName("");
+    setShowCreateModal(false);
+
+    await refreshProjects();
+
+    if (res.data?.project?.id) {
+      setSelectedProjectId(res.data.project.id);
     }
 
-    try {
-      setCreating(true);
-      const res = await API.post("/projects/", newProject);
-      showToast("Project created successfully! 🚀", "success");
-      setNewProject({ title: "", description: "", deadline: "" });
-      setShowCreateModal(false);
-      await refreshProjects();
-      if (res.data?.project?.id) {
-        setSelectedProjectId(res.data.project.id);
-      }
-    } catch (err) {
-      console.error(err);
-      showToast(err.response?.data?.detail || "Failed to create project", "error");
-    } finally {
-      setCreating(false);
-    }
-  };
+  } catch (err) {
+    console.error("STATUS:", err.response?.status);
+    console.error("BACKEND ERROR:", err.response?.data);
+    console.error("SENT DATA:", newProject);
+
+    showToast("Project creation failed. Check console.", "error");
+
+  } finally {
+    setCreating(false);
+  }
+};
 
   const handleJoinProject = async (e) => {
     e.preventDefault();
@@ -416,7 +475,11 @@ function Projects() {
                         Invite Code
                       </span>
                       <div style={{ fontFamily: "monospace", fontSize: "13.5px", fontWeight: 700, color: "var(--text-main)", letterSpacing: "0.08em" }}>
-                        {proj.invite_code}
+                        {proj.invite_code
+                          ? `${proj.invite_code.slice(0, 2)}${"•".repeat(
+                              Math.max(0, proj.invite_code.length - 2)
+                            )}`
+                          : ""}
                       </div>
                     </div>
 
@@ -540,6 +603,19 @@ function Projects() {
 
                 <div className="form-group">
                   <label className="form-label">Description</label>
+
+                  <input
+                      type="file"
+                      accept=".txt,.md"
+                      onChange={handleDescriptionFileUpload}
+                      className="form-input"
+                    />
+
+                    {uploadedFileName && (
+                      <p className="text-sm text-green-400 mt-2">
+                        Uploaded: {uploadedFileName}
+                      </p>
+                    )}
                   <textarea
                     className="form-textarea"
                     placeholder="Describe the scope, goals, and key objectives of this project..."

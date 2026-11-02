@@ -14,6 +14,7 @@ import Kanban from "./pages/Kanban";
 import Members from "./pages/Members";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
+import ForgotPassword from "./pages/ForgotPassword";
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
           <Route path="/kanban" element={<ProtectedRoute><Kanban /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+          <Route path="/forgot-password" element={<ForgotPassword/>}/>
         </Routes>
       </ProjectProvider>
     </BrowserRouter>

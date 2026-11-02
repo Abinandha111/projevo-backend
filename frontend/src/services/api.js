@@ -3,8 +3,9 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: "https://projevo-backend.onrender.com"
+  baseURL: "http://localhost:8000"
 });
+
 
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");

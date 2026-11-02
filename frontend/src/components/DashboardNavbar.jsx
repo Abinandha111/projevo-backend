@@ -13,7 +13,8 @@ import {
   Settings,
   LogOut,
   Bell,
-  Pointer
+  Pointer,
+  Trash2
 } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
 
@@ -35,7 +36,12 @@ function DashboardNavbar({ onOpenMobile }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationOpen, setNotificationOpen] = useState(false);
 
+  const [swipingNotification, setSwipingNotification] = useState(null);
+
+  const [hoveredNotificationId, setHoveredNotificationId] = useState(null);
+
   const notificationRef = useRef(null);
+  const swipeTriggered = useRef(false);
 
   const navigate = useNavigate();
 
@@ -79,6 +85,62 @@ function DashboardNavbar({ onOpenMobile }) {
     logout();
     navigate("/login");
   };
+
+  const handleDeleteNotification = async (notificationId) => {
+  try {
+    await API.delete(`/notifications/${notificationId}`);
+
+    setNotifications((previous) => {
+      const notification = previous.find(
+        (item) => item.id === notificationId
+      );
+
+      if (notification && !notification.is_read) {
+        setUnreadCount((count) => Math.max(0, count - 1));
+      }
+
+      return previous.filter(
+        (item) => item.id !== notificationId
+      );
+    });
+
+  } catch (error) {
+    console.error("Failed to delete notification:", error);
+  }
+};
+
+const handleSwipeStart = (e, notificationId) => {
+  swipeTriggered.current = false;
+  setSwipingNotification({
+    id: notificationId,
+    startX: e.clientX,
+    currentX: e.clientX
+  });
+};
+
+const handleSwipeMove = (e) => {
+  if (!swipingNotification) return;
+
+  
+
+  setSwipingNotification((previous) => ({
+    ...previous,
+    currentX: e.clientX
+  }));
+};
+const handleSwipeEnd = () => {
+  if (!swipingNotification) return;
+
+  const distance =
+    swipingNotification.currentX - swipingNotification.startX;
+
+  if (Math.abs(distance) > 80) {
+    swipeTriggered.current = true;
+    handleDeleteNotification(swipingNotification.id);
+  }
+
+  setSwipingNotification(null);
+};
 
   const username = currentUser?.name || "User";
   const userEmail = currentUser?.email || "";
@@ -358,9 +420,18 @@ function DashboardNavbar({ onOpenMobile }) {
                     notifications.map((notification) => (
                       <div 
                         key={notification.id}
+                        onMouseEnter={() => setHoveredNotificationId(notification.id)}
+                        onMouseLeave={() => setHoveredNotificationId(null)}
+                         onPointerDown={(e) => handleSwipeStart(e, notification.id)}
+                          onPointerMove={handleSwipeMove}
+                          onPointerUp={handleSwipeEnd}
+                          onPointerCancel={handleSwipeEnd}
                         onClick={async () => {
                               if (notification.is_read) return;
-
+                              if (swipeTriggered.current) {
+                                    swipeTriggered.current = false;
+                                    return;
+                              }
                               try {
                                 await API.put(`/notifications/${notification.id}/read`);
 
@@ -384,9 +455,39 @@ function DashboardNavbar({ onOpenMobile }) {
                           borderRadius: "6px",
                           marginBottom: "6px",
                           cursor:"Pointer",
+                          touchAction: "pan-y",
+                          userSelect: "none",
+                          position: "relative",
+                          paddingRight: "40px",
                         }}
                       >
-                        <p style={{ margin: "0 0 4px", fontSize: "13px", fontWeight: 600, color: "var(--text-main)" }}>
+
+                        {hoveredNotificationId === notification.id && (
+                          <button
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteNotification(notification.id);
+                            }}
+                            title="Delete notification"
+                            style={{
+                              position: "absolute",
+                              right: "8px",
+                              top: "50%",
+                              transform: "translateY(-50%)",
+                              background: "transparent",
+                              border: "none",
+                              color: "#ef4444",
+                              cursor: "pointer",
+                              padding: "5px",
+                              display: "flex",
+                              alignItems: "center"
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                          )}
+                            <p style={{ margin: "0 0 4px", fontSize: "13px", fontWeight: 600, color: "var(--text-main)" }}>
                           {notification.title || "Notification"}
                         </p>
 

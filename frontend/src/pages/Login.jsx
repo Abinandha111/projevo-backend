@@ -203,6 +203,20 @@ function Login() {
               </div>
             </div>
 
+            <div style={{ textAlign: "right", marginTop: "-8px", marginBottom: "16px" }}>
+  <Link
+    to="/forgot-password"
+    style={{
+      color: "var(--primary)",
+      fontSize: "13px",
+      fontWeight: 600,
+      textDecoration: "none"
+    }}
+  >
+    Forgot Password?
+  </Link>
+</div>
+
             <button
               type="submit"
               className="btn btn-primary"

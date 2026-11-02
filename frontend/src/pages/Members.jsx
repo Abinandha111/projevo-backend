@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
 import { useProject } from "../context/ProjectContext";
 import API from "../services/api";
@@ -17,19 +17,28 @@ import {
   UserPlus
 } from "lucide-react";
 
+
+
+
 function Members() {
+
+  const navigate = useNavigate();
   const {
     projects,
     selectedProject,
     selectedProjectId,
     isLeader,
-    showToast
+    showToast,
+    refreshProjects
   } = useProject();
 
   const [members, setMembers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leavingProject, setLeavingProject] = useState(false);
 
   const fetchMembersAndTasks = async () => {
     if (!selectedProjectId) {
@@ -69,6 +78,33 @@ function Members() {
     setTimeout(() => setCopiedCode(false), 2500);
   };
 
+  const handleLeaveProject = async () => {
+  if (!selectedProjectId) return;
+
+  try {
+    setLeavingProject(true);
+
+    await API.delete(`/members/${selectedProjectId}/leave`);
+
+    setShowLeaveModal(false);
+
+    await refreshProjects();
+
+    showToast("You left the project successfully", "success");
+
+    navigate("/projects");
+  } catch (err) {
+    console.error("Failed to leave project:", err);
+
+    showToast(
+      err.response?.data?.detail || "Failed to leave project",
+      "error"
+    );
+  } finally {
+    setLeavingProject(false);
+  }
+};
+
   // Calculate task counts per member
   const getMemberTaskCount = (userId) => {
     return tasks.filter((t) => t.assigned_to === userId).length;
@@ -80,6 +116,75 @@ function Members() {
 
   return (
     <DashboardLayout>
+                  
+            {/* Leave Project Confirmation Modal */}
+            {showLeaveModal && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  backgroundColor: "rgba(0,0,0,0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 1000,
+                  padding: "20px"
+                }}
+              >
+                <div
+                  className="card"
+                  style={{
+                    width: "100%",
+                    maxWidth: "420px",
+                    padding: "24px"
+                  }}
+                >
+                  <h2 style={{
+                    fontSize: "18px",
+                    fontWeight: 700,
+                    color: "var(--text-main)",
+                    marginBottom: "12px"
+                  }}>
+                    Leave Project?
+                  </h2>
+
+                  <p style={{
+                    fontSize: "14px",
+                    color: "var(--text-muted)",
+                    lineHeight: 1.6,
+                    marginBottom: "24px"
+                  }}>
+                    Are you sure you want to leave "{selectedProject?.title}"?
+                    You will lose access to this project and its tasks.
+                    Your previous task assignments will be restored if you join again using the same invite code.
+                  </p>
+
+                  <div style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "10px"
+                  }}>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => setShowLeaveModal(false)}
+                      disabled={leavingProject}
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleLeaveProject}
+                      disabled={leavingProject}
+                      style={{ backgroundColor: "#ef4444" }}
+                    >
+                      {leavingProject ? "Leaving..." : "Leave Project"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
       {/* Header */}
       <div className="page-header">
         <div>
@@ -92,15 +197,18 @@ function Members() {
         </div>
 
         <div style={{ display: "flex", gap: "10px" }}>
-          {selectedProject && (
-            <button
-              onClick={handleCopyCode}
-              className="btn btn-secondary"
-            >
-              {copiedCode ? <Check size={16} color="#10b981" /> : <Copy size={16} />}
-              {copiedCode ? "Copied Code" : "Copy Invite Code"}
-            </button>
-          )}
+          
+          
+
+          {!isLeader && selectedProject && (
+          <button
+            onClick={() => setShowLeaveModal(true)}
+            className="btn btn-secondary"
+            style={{ color: "#ef4444" }}
+          >
+            Leave Project
+          </button>
+        )}
 
           <Link to="/tasks" className="btn btn-primary">
             <ListTodo size={16} /> View Tasks
@@ -130,66 +238,7 @@ function Members() {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-          {/* Invite Code Showcase Card */}
-          <div
-            className="card"
-            style={{
-              padding: "24px",
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-color)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "20px",
-              flexWrap: "wrap"
-            }}
-          >
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                <KeyRound size={18} color="var(--primary)" />
-                <h3 style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-main)" }}>
-                  Project Invite Code
-                </h3>
-              </div>
-              <p style={{ fontSize: "13px", color: "var(--text-muted)", maxWidth: "560px", lineHeight: 1.5 }}>
-                Share this unique invite code with teammates. They can enter it on the Projects page to join this project instantly with Member permissions.
-              </p>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <div
-                style={{
-                  fontFamily: "monospace",
-                  fontSize: "18px",
-                  fontWeight: 700,
-                  letterSpacing: "0.1em",
-                  padding: "10px 18px",
-                  backgroundColor: "var(--bg-subtle)",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--border-color)",
-                  color: "var(--text-main)"
-                }}
-              >
-                {selectedProject.invite_code}
-              </div>
-
-              <button
-                onClick={handleCopyCode}
-                className="btn btn-primary"
-                style={{ padding: "10px 16px" }}
-              >
-                {copiedCode ? (
-                  <>
-                    <Check size={16} /> Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy size={16} /> Copy Code
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
+          
 
           {/* Members Count & List */}
           <div className="card" style={{ padding: "24px" }}>
